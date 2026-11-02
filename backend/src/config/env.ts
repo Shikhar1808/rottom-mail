@@ -9,6 +9,8 @@ try {
 process.env.ETHEREAL_CACHE ??= 'no';
 
 const int = (def: number) => z.coerce.number().int().nonnegative().default(def);
+// 0 here would stop all sending without an error (or divide by zero), so refuse to start instead.
+const positive = (def: number) => z.coerce.number().int().positive().default(def);
 
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
@@ -26,15 +28,15 @@ const schema = z.object({
   SLACK_REDIRECT_URI: z.string().default(''),
 
   RATE_LIMIT_MODE: z.enum(['per_sender', 'global']).default('per_sender'),
-  WORKER_CONCURRENCY: int(5),
+  WORKER_CONCURRENCY: positive(5),
   WORKER_QUEUES: z.string().default('emails,search-sync,notifications'),
   MIN_DELAY_BETWEEN_SENDS_MS: int(2000),
-  MAX_EMAILS_PER_HOUR: int(200),
-  MAX_EMAILS_PER_HOUR_PER_SENDER: int(200),
-  RATE_LIMIT_WINDOW_MS: int(3_600_000),
+  MAX_EMAILS_PER_HOUR: positive(200),
+  MAX_EMAILS_PER_HOUR_PER_SENDER: positive(200),
+  RATE_LIMIT_WINDOW_MS: positive(3_600_000),
 
   SMTP_MODE: z.enum(['ethereal', 'fake']).default('ethereal'),
-  DEV_LOGIN: z.stringbool().default(false), // one-click login as dev@example.com; never in production
+  DEV_LOGIN: z.stringbool().default(false), // one-click login as dev@example.com; only on a localhost APP_URL
   DEFAULT_SENDERS_PER_USER: int(2),
   MAX_SENDERS_PER_USER: int(5),
 });
@@ -47,4 +49,6 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export const isHttps = env.APP_URL.startsWith('https://');
-export const devLogin = env.DEV_LOGIN && env.NODE_ENV !== 'production';
+// Also needs a localhost APP_URL, so a dev .env copied to the server can't open a no-password login there.
+export const devLogin =
+  env.DEV_LOGIN && env.NODE_ENV !== 'production' && ['localhost', '127.0.0.1'].includes(new URL(env.APP_URL).hostname);

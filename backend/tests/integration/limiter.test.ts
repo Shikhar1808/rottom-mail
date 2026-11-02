@@ -29,6 +29,12 @@ describe('reserveSlot (per-sender Lua)', () => {
     expect(slots).toEqual([start, start + gap, start, start + 2 * gap]);
   });
 
+  it('remembers the next slot until it has passed, even windows ahead', async () => {
+    const s = crypto.randomUUID();
+    for (let i = 0; i < 10; i++) await reserveSlot(s, start, win / 2, 100, win); // last slot 4.5 windows ahead
+    expect(await redis.pttl(`rl:{sender:${s}}:next`)).toBeGreaterThan(5 * win);
+  });
+
   it('reports the limit once, then moves overflow to the next window in arrival order', async () => {
     const s = crypto.randomUUID();
     const r = [];

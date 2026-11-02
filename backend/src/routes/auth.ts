@@ -56,7 +56,7 @@ authRouter.get('/google/callback', async (req, res) => {
   }
 });
 
-// Dev only (DEV_LOGIN=true, never in production): try the app before the Google OAuth client exists.
+// Dev only (DEV_LOGIN=true on a localhost APP_URL, never in production): try the app before the Google OAuth client exists.
 authRouter.get('/dev', async (_req, res) => {
   if (!devLogin) return void res.status(404).json({ error: 'Not found' });
   const email = 'dev@example.com';

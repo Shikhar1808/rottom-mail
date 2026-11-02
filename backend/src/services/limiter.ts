@@ -21,7 +21,7 @@ if count > limit then
   redis.call('PEXPIRE', KEYS[3] .. window, win * 2)
   return {0, (window + 1) * win + (seq - 1) * gap, 0}
 end
-redis.call('SET', KEYS[1], slot + gap, 'PX', win * 2)
+redis.call('SET', KEYS[1], slot + gap, 'PX', slot + gap - now + win) -- kept until past the last booked slot
 return {slot, 0, count == limit and 1 or 0}
 `;
 

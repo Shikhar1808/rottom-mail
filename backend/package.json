@@ -10,7 +10,7 @@
     "build": "eslint src && tsc",
     "start:api": "node dist/server.js",
     "start:worker": "node dist/workers/index.js",
-    "lint": "eslint src",
+    "lint": "eslint src tests",
     "test": "vitest run",
     "db:migrate": "prisma migrate dev"
   },

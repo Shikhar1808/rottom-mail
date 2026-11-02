@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 const NO_CRON = 'No cron: schedule with BullMQ delayed jobs.';
 
 export default defineConfig(tseslint.configs.recommended, {
-  files: ['src/**/*.ts'],
+  files: ['src/**/*.ts', 'tests/**/*.ts'],
   rules: {
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     'no-restricted-imports': ['error', {
