@@ -17,27 +17,27 @@
 - [ ] **Local HTTPS (Vite only):** `mkcert -install` + `mkcert localhost`. Check that Slack's settings accept `https://localhost:5173/api/slack/callback`. If not, use the GitHub Pages relay page ([06](./06-auth-slack.md#local-dev-and-slack))
 - [ ] **Pick the production subdomain** (an unused one, e.g. `rottom`). Nothing else on GoDaddy changes
 
-## Day 1 (Mon 11-02, evening): foundations (~5h)
+## Day 1 (Mon 11-02, evening): foundations (~5h) ✅ done
 
 **Block A: setup (1h)**
-- [ ] P0 Monorepo folders `backend/`, `frontend/`, `docker-compose.yml` (postgres, redis with AOF + `noeviction`, elasticsearch single node)
-- [ ] P0 `backend/.env.example`, zod-parsed `config.ts`
-- [ ] P0 ESLint no-cron guard + `build = eslint src && tsc`
-- [ ] P0 Prisma schema (User, Sender, Campaign, Email, SlackIntegration, AuditEvent) + first migration
-- [ ] P1 Audit append-only trigger migration
+- [x] P0 `backend/`, `docker-compose.yml` (postgres, redis with AOF + `noeviction` on host port 6380, elasticsearch single node). `frontend/` is created in the frontend block
+- [x] P0 `backend/.env.example`, zod-parsed `config.ts`
+- [x] P0 ESLint no-cron guard + `build = eslint src && tsc`
+- [x] P0 Prisma schema (User, Sender, Campaign, Email, SlackIntegration, AuditEvent) + first migration
+- [x] P1 Audit append-only trigger migration
 
 **Block B: core scheduler (3h)**
-- [ ] P0 `updateEmail()` helper (row + version + audit in one transaction, sync job after commit)
-- [ ] P0 Senders option B: `GET/POST /api/senders`, `createTestAccount`, encryption helper, provisioning lock
-- [ ] P0 `POST /api/campaigns`: zod, transaction, `addBulk` (jobId, delay, attempts, backoff, retention)
-- [ ] P0 Worker: status check, atomic claim, pooled nodemailer, fixed Message-ID, record sent / failed
-- [ ] P0 Startup repair (Redis lock, batches)
-- [ ] P0 Bull Board at `/admin/queues` (read-only)
-- [ ] P1 Graceful shutdown (`worker.close()` on SIGTERM), `WORKER_QUEUES`
+- [x] P0 `updateEmail()` helper (row + version + audit in one transaction, sync job after commit)
+- [x] P0 Senders option B: `GET/POST /api/senders`, `createTestAccount`, encryption helper, provisioning lock
+- [x] P0 `POST /api/campaigns`: zod, transaction, `addBulk` (jobId, delay, attempts, backoff, retention)
+- [x] P0 Worker: status check, atomic claim, pooled nodemailer, fixed Message-ID, record sent / failed
+- [x] P0 Startup repair (Redis lock, batches)
+- [x] P0 Bull Board at `/admin/queues` (read-only)
+- [x] P1 Graceful shutdown (`worker.close()` on SIGTERM), `WORKER_QUEUES`
 
 **Block C: first check (1h)**
-- [ ] P0 Schedule 5 emails 1 min ahead via curl/Postman. They send, preview links open
-- [ ] P0 Restart test: schedule +2 min, kill API + worker, restart. Sent once, on time
+- [x] P0 Schedule 5 emails 1 min ahead via curl (`npm run dev:session` cookie). All sent through Ethereal with preview links; duplicate lead merged; audit trail scheduled → claimed → sent
+- [x] P0 Restart test: scheduled +2 min, killed API + worker, restarted Redis (3 delayed jobs survived), restarted API (repair) + 2 workers. Each sent exactly once
 
 ## Day 2 (Tue 11-03, morning): limits, auth, Slack, search (~6h)
 

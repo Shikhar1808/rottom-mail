@@ -261,7 +261,7 @@ docker-compose.prod.yml     + caddy, api, worker (scalable)   (see 11)
 Caddyfile                   HTTPS + static frontend + /api /auth /admin → api:4000
 backend/
   prisma/schema.prisma
-  eslint.config.js          no-cron guard (see 03)
+  eslint.config.mjs         no-cron guard (see 03)
   src/config.ts             zod-parsed env
   src/server.ts             express app, routes, bull-board, startup repair
   src/worker.ts             starts the workers listed in WORKER_QUEUES

@@ -61,7 +61,7 @@ Full detail: [architecture](./docs/01-architecture.md) · [decisions](./docs/02-
 
 ```bash
 mkcert -install && mkcert localhost            # localhost.pem + localhost-key.pem in the repo root (git-ignored)
-docker compose up -d                           # postgres, redis (AOF, noeviction), elasticsearch
+docker compose up -d                           # postgres :5432, redis :6380 (AOF, noeviction), elasticsearch :9200
 
 cd backend
 cp .env.example .env                           # fill in Google / Slack / ENCRYPTION_KEY
@@ -69,6 +69,7 @@ npm install
 npx prisma migrate dev
 npm run dev:api                                # http://localhost:4000 (private; reached via the Vite proxy)
 npm run dev:worker                             # emails + search-sync + notifications workers
+npm run dev:session                            # dev only: prints a session cookie for curl (before Google login)
 
 cd ../frontend
 npm install

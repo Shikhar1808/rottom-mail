@@ -114,16 +114,19 @@ A queue only knows whether the **worker finished**, not whether the **email left
 
 **Never used:** `node-cron`, `cron`, `croner`, `node-schedule`, `agenda`, `bree`, OS `crontab`, BullMQ repeatable jobs (`repeat: { pattern }`, `upsertJobScheduler`), or `setInterval` sweepers.
 
-### Enforced by ESLint (`backend/eslint.config.js`)
+### Enforced by ESLint (`backend/eslint.config.mjs`)
 
 ```js
+import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
+// Hard constraint from the assignment: no cron of any kind. The build runs this, so it fails if cron sneaks in.
 const NO_CRON = 'No cron: schedule with BullMQ delayed jobs.';
 
-export default tseslint.config(...tseslint.configs.recommended, {
+export default defineConfig(tseslint.configs.recommended, {
   files: ['src/**/*.ts'],
   rules: {
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     'no-restricted-imports': ['error', {
       patterns: [{ group: ['*cron*', 'node-schedule', 'agenda', 'bree'], message: NO_CRON }],
     }],
