@@ -93,6 +93,7 @@ npm run dev                                    # https://localhost:5173  (Bull B
 | `MAX_EMAILS_PER_HOUR` / `MAX_EMAILS_PER_HOUR_PER_SENDER` | `200` | Hourly caps |
 | `RATE_LIMIT_WINDOW_MS` | `3600000` | `60000` for the demo |
 | `SMTP_MODE` | `ethereal` | `fake` for load tests (nothing sent) |
+| `DEV_LOGIN` | `false` | `true` adds a "Dev login" button (as `dev@example.com`) for trying the UI before Google is set up. Works only when `APP_URL` is localhost, and never with `NODE_ENV=production` |
 | `DEFAULT_SENDERS_PER_USER` / `MAX_SENDERS_PER_USER` | `2` / `5` | Ethereal mailboxes per user |
 
 ### Ethereal

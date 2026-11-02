@@ -52,6 +52,7 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    ```
    Caddy gets and renews the certificate by itself. That's inside Caddy, not cron in our code.
 7. **Production env:**
+   - `NODE_ENV=production` (also turns dev login off, along with the non-localhost `APP_URL`)
    - `APP_URL=https://rottom.your-domain.com`
    - `SLACK_REDIRECT_URI=https://rottom.your-domain.com/api/slack/callback`
    - real `ENCRYPTION_KEY`, Google and Slack secrets
