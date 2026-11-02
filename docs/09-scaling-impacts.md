@@ -87,6 +87,7 @@ BullMQ hands each job to **exactly one** worker (an atomic move in Redis). 4 wor
 
 ## Known limits and future work
 
+- The planned deployment is a **single EC2**, so it's one point of failure and only scales vertically. The managed path (ECS, RDS, Redis with `noeviction`, Elastic Cloud) is in [11](./11-deployment-aws.md#why-not-managed-aws-services-for-now).
 - No system-wide cap in per-sender mode (could add a global ceiling on top).
 - Redis Cluster support (hash tags + BullMQ prefix).
 - Sender rotation and per-sender limits (O2/O3).

@@ -10,8 +10,9 @@ The system schedules and sends emails at scale. Users schedule emails through an
 
 | Component | Tech | Role |
 |---|---|---|
-| Frontend | Vite + React + TypeScript + Tailwind + React Router + TanStack Query + `sonner` toasts | Login, dashboard (Scheduled / Sent tabs), compose, search, Slack connect. Served at `app.mysite.com` |
-| API | Express 5 + TypeScript + `zod` | Auth, campaigns, emails, search, senders, Slack, Bull Board. Served at `api.mysite.com` |
+| Frontend | Vite + React + TypeScript + Tailwind + React Router + TanStack Query + `sonner` toasts | Login, dashboard (Scheduled / Sent tabs), compose, search, Slack connect. Served at `rottom.your-domain.com` |
+| Front door | Caddy (prod, automatic HTTPS) / Vite dev proxy (local, mkcert) | One origin. `/api`, `/auth`, `/admin` go to the API, everything else to the frontend |
+| API | Express 5 + TypeScript + `zod` | Auth, campaigns, emails, search, senders, Slack, Bull Board. **Private**, plain HTTP `:4000`, only reached through the front door |
 | Workers | BullMQ workers (separate process from the API) | `emails` (send), `search-sync` (copy to ES), `notifications` (Slack) |
 | Database | Postgres + Prisma | Source of truth: users, senders, campaigns, emails, Slack integrations, audit events |
 | Queue / coordination | Redis (AOF on, `noeviction`) | BullMQ jobs, rate-limit counters and slots, sessions, OAuth `state`, locks |
@@ -27,10 +28,11 @@ The system schedules and sends emails at scale. Users schedule emails through an
 
 ```mermaid
 flowchart LR
-  subgraph FE["Browser: app.mysite.com"]
+  subgraph FE["Browser"]
     UI["Login · Dashboard · Compose · Search · Slack button"]
   end
-  subgraph API["API process: api.mysite.com"]
+  CAD["Caddy :443 prod / Vite proxy local: rottom.your-domain.com"]
+  subgraph API["API process: private, plain HTTP :4000"]
     R["Routes: auth, senders, campaigns, emails, search, slack"]
     BB["Bull Board /admin/queues (read-only)"]
     REP["Startup repair (one instance, Redis lock)"]
@@ -47,7 +49,8 @@ flowchart LR
   SL[["Slack incoming webhook"]]
   G[["Google OAuth"]]
 
-  UI -- "fetch with credentials" --> R
+  UI -- "same-origin fetch, HTTPS" --> CAD
+  CAD -- "/api /auth /admin" --> R
   R --> PG
   R -- "add jobs" --> RD
   R -- "login" --> G
@@ -254,6 +257,8 @@ Every state-changing request (POST/PUT/DELETE) must carry `Origin: APP_URL` and 
 
 ```
 docker-compose.yml          postgres, redis (AOF + noeviction), elasticsearch
+docker-compose.prod.yml     + caddy, api, worker (scalable)   (see 11)
+Caddyfile                   HTTPS + static frontend + /api /auth /admin → api:4000
 backend/
   prisma/schema.prisma
   eslint.config.js          no-cron guard (see 03)

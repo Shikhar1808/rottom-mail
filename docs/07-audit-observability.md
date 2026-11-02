@@ -81,6 +81,8 @@ createBullBoard({
 app.use('/admin/queues', requireAuth, serverAdapter.getRouter());
 ```
 
+It's served on the same domain (`https://rottom.your-domain.com/admin/queues`, through Caddy). In production it can additionally be limited to your IP in the Caddyfile ([11](./11-deployment-aws.md)).
+
 | State | Meaning here |
 |---|---|
 | Delayed | waiting for their scheduled time, plus emails pushed to the next window by the per-sender limiter |

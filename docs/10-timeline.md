@@ -14,7 +14,8 @@
 - [ ] **Figma link:** missing from the assignment text. Ask for it or find it, or the frontend matches the layout only roughly
 - [ ] **Google Cloud:** OAuth client (Web), redirect URIs, consent screen in Testing, test users (you + reviewers)
 - [ ] **Slack app:** create app, enable Incoming Webhooks, HTTPS redirect URLs, scope `incoming-webhook`
-- [ ] **Local HTTPS:** `mkcert -install`, certs for `localhost`. Check that Slack accepts `https://localhost:4000/...` (otherwise set up a tunnel)
+- [ ] **Local HTTPS (Vite only):** `mkcert -install` + `mkcert localhost`. Check that Slack's settings accept `https://localhost:5173/api/slack/callback`. If not, use the GitHub Pages relay page ([06](./06-auth-slack.md#local-dev-and-slack))
+- [ ] **Pick the production subdomain** (an unused one, e.g. `rottom`). Nothing else on GoDaddy changes
 
 ## Day 1 (Mon 11-02, evening): foundations (~5h)
 
@@ -50,13 +51,15 @@
 **Block E: auth (1.5h)**
 - [ ] P0 Google OAuth (state + PKCE, verify ID token, upsert by `sub`)
 - [ ] P0 Redis sessions, `requireAuth`, `/api/me`, logout
-- [ ] P0 CORS with credentials + `Origin` check middleware
+- [ ] P0 Vite proxy for `/api` `/auth` `/admin` (one origin, no CORS) + `Origin` check middleware
+- [ ] P1 Cookie names/flags follow `APP_URL` (`__Host-sid`, `__Host-g_oauth`, `Secure` on https)
 
 **Block F: Slack (1.5h)**
 - [ ] P0 Connect / callback (single-use state tied to the user, `oauth.v2.access`, encrypted upsert)
 - [ ] P0 `notifications` queue + limit-reached message (Block Kit, escaping, `<!date>`)
 - [ ] P0 Disconnect (`auth.revoke` + delete), skip when not connected, permanent error → broken
 - [ ] P1 "Connected" test message
+- [ ] P1 Dev-only `npm run dev:slack-webhook <url>` to test alerts without OAuth
 
 **Block G: search (1h)**
 - [ ] P0 Index mapping on boot, `search-sync` worker (version_type external, 409 = ok), campaign bulk job
@@ -85,13 +88,31 @@
 - [ ] P0 Record the demo video (script below)
 - [ ] P0 Submit (checklist below)
 
+## Local test checklist (before recording or deploying)
+
+- [ ] `docker compose up -d` (postgres, redis, elasticsearch)
+- [ ] Google login on `https://localhost:5173`: header shows name, email, avatar. Logout works
+- [ ] Compose: CSV count, schedule 5 emails +1 min. They send, Ethereal previews open, Sent tab updates
+- [ ] **Restart:** schedule +2 min, stop API + worker (+ `docker restart redis`), start. Each sends once, on time
+- [ ] **Rate limit:** 60s window, cap 5, 15 leads. 5 sent, 10 moved in order. Repeat with `RATE_LIMIT_MODE=global`
+- [ ] **Slack:** alert via the dev webhook, then Connect / Disconnect / Reconnect. No crash when not connected
+- [ ] Search box finds emails. Bull Board shows the queues
+- [ ] `SMTP_MODE=fake` load test with 1000 leads
+- [ ] `npm run build` passes (includes the no-cron lint)
+
+## After the submission is safe (P2)
+
+- [ ] P2 **Deploy to AWS (2–3h):** EC2 + Elastic IP, new GoDaddy A record, security group, Caddyfile, compose up with `--scale worker=2`, prod OAuth redirect URIs, smoke test ([11](./11-deployment-aws.md)). Add the live URL to the README
+- [ ] P2 Replace mkcert with the relay page or `local.your-domain.com` + a real certificate ([06](./06-auth-slack.md#local-dev-and-slack))
+
 ## Cut line (if behind, drop in this order)
 
-1. P2 Figma pixel-matching, then the history drawer
-2. P1 Option C IMAP check (keep `needs_check` visible + Retry send)
-3. P1 load script numbers (keep `SMTP_MODE=fake` and explain the expected behaviour)
-4. P1 extra tests (keep the limiter tests)
-5. **Never cut:** anything P0, encryption of secrets, `Origin` check, the no-cron guard
+1. P2 AWS deployment and the mkcert replacement (the assignment only needs local + video)
+2. P2 Figma pixel-matching, then the history drawer
+3. P1 Option C IMAP check (keep `needs_check` visible + Retry send)
+4. P1 load script numbers (keep `SMTP_MODE=fake` and explain the expected behaviour)
+5. P1 extra tests (keep the limiter tests)
+6. **Never cut:** anything P0, encryption of secrets, `Origin` check, the no-cron guard
 
 ## Demo video script (≤ 5 min)
 
@@ -116,5 +137,6 @@
   - [ ] assumptions / trade-offs
 - [ ] README states the chosen delay and limit ("at least 2s between sends, 200/hr per sender")
 - [ ] Demo video link (≤ 5 min) in the README
+- [ ] Live URL in the README (only if the P2 deployment happened)
 - [ ] `.env.example` committed, no secrets in git
 - [ ] Reviewers added as Google OAuth test users (if they will run it)

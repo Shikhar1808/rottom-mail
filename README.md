@@ -7,12 +7,15 @@ A production-style email scheduler with a dashboard. Users log in with Google, u
 ## How it works
 
 ```
-Browser (app.mysite.com) ──► API (api.mysite.com) ──► Postgres (source of truth)
-                                   │                    ▲
-                                   ▼                    │
-                           Redis / BullMQ ──► Workers: emails · search-sync · notifications
-                                                 │            │              │
-                                           Ethereal SMTP   Elasticsearch   Slack webhook
+Browser ──HTTPS──► rottom.your-domain.com (Caddy in prod / Vite proxy locally)
+                        │  /api /auth /admin
+                        ▼
+                  API (private, :4000) ──► Postgres (source of truth)
+                        │                    ▲
+                        ▼                    │
+                Redis / BullMQ ──► Workers: emails · search-sync · notifications
+                                      │            │              │
+                                Ethereal SMTP   Elasticsearch   Slack webhook
 ```
 
 - **Scheduling:** each email is a row in Postgres plus a BullMQ delayed job with `jobId = email.id`. Rows are committed first, and the job's delay is stored as a timestamp in Redis.
@@ -54,23 +57,22 @@ Full detail: [architecture](./docs/01-architecture.md) · [decisions](./docs/02-
 
 ## Run it locally (planned, will be checked against the code)
 
-**Needs:** Node 20+, Docker, [`mkcert`](https://github.com/FiloSottile/mkcert) (Slack requires HTTPS redirect URLs).
+**Needs:** Node 20+, Docker, [`mkcert`](https://github.com/FiloSottile/mkcert). Slack requires HTTPS redirect URLs, so only the Vite dev server uses HTTPS; Express stays plain HTTP behind its proxy.
 
 ```bash
-mkcert -install && mkcert localhost            # certs for https://localhost
+mkcert -install && mkcert localhost            # localhost.pem + localhost-key.pem in the repo root (git-ignored)
 docker compose up -d                           # postgres, redis (AOF, noeviction), elasticsearch
 
 cd backend
 cp .env.example .env                           # fill in Google / Slack / ENCRYPTION_KEY
 npm install
 npx prisma migrate dev
-npm run dev:api                                # https://localhost:4000  (Bull Board: /admin/queues)
+npm run dev:api                                # http://localhost:4000 (private; reached via the Vite proxy)
 npm run dev:worker                             # emails + search-sync + notifications workers
 
 cd ../frontend
-cp .env.example .env                           # VITE_API_URL=https://localhost:4000
 npm install
-npm run dev                                    # https://localhost:5173
+npm run dev                                    # https://localhost:5173  (Bull Board: /admin/queues)
 ```
 
 ### Environment
@@ -78,9 +80,10 @@ npm run dev                                    # https://localhost:5173
 | Variable | Example | Purpose |
 |---|---|---|
 | `DATABASE_URL` / `REDIS_URL` / `ELASTICSEARCH_URL` | | Infra |
-| `APP_URL` / `API_URL` | `https://localhost:5173` / `https://localhost:4000` | CORS origin, redirects, OAuth callbacks |
+| `APP_URL` | `https://localhost:5173` (prod: `https://rottom.your-domain.com`) | The one public origin: redirects, Google callback, `Origin` check, cookie flags |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | | Google login |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | | Slack connect |
+| `SLACK_REDIRECT_URI` | `https://localhost:5173/api/slack/callback` | Must match a URL registered in the Slack app |
 | `ENCRYPTION_KEY` | 32 random bytes, base64 | Encrypts webhook URLs, tokens, SMTP passwords |
 | `RATE_LIMIT_MODE` | `per_sender` | or `global` |
 | `WORKER_CONCURRENCY` | `5` | Parallel jobs per worker |
@@ -97,8 +100,8 @@ Nothing to set up: the first time a user opens Compose, the backend creates 2 Et
 
 ### Google and Slack apps
 
-- **Google:** a Web OAuth client with redirect `https://localhost:4000/auth/google/callback`. Testing mode, with test users added.
-- **Slack:** an app with Incoming Webhooks on, redirect `https://localhost:4000/api/slack/callback`, scope `incoming-webhook`.
+- **Google:** a Web OAuth client with redirect `https://localhost:5173/auth/google/callback` (+ the production one). Testing mode, with test users added.
+- **Slack:** an app with Incoming Webhooks on, redirect `https://localhost:5173/api/slack/callback` (+ the production one), scope `incoming-webhook`. If Slack refuses `localhost`, use the relay page in docs/06.
 
 Step by step: [docs/06](./docs/06-auth-slack.md).
 
@@ -112,10 +115,18 @@ Step by step: [docs/06](./docs/06-auth-slack.md).
 - **ES lags ~1s** for findability. Tabs read Postgres, so statuses are always exact.
 - **Global mode** pauses the whole queue and its alert goes to the owner of the email that reached the limit. Per-sender mode has no system-wide ceiling.
 - **No automatic cleanup** of old audit events or jobs beyond BullMQ age limits (no cron).
-- **Hosting:** frontend and API on subdomains of one domain. Fully separate sites would break cookies in Safari/Firefox.
+- **Hosting:** one origin. Caddy (prod) and the Vite proxy (local) forward `/api`, `/auth` and `/admin` to a private API, so there's no CORS and no public API hostname. Production adds one new GoDaddy record and leaves the domain's existing sites untouched.
+- **Local HTTPS uses mkcert for now** (only because Slack needs HTTPS redirects). A relay page or a real certificate on `local.your-domain.com` is the later fix.
+- **Sessions:** a Redis-backed random ID cookie (`__Host-` prefix on https). Logout really ends the session.
 - **Skipped on purpose:** hash-chained audit, sender rotation, per-sender limit column, "limit cleared" Slack messages, sending through users' Gmail.
 
 All decisions with alternatives: [docs/02](./docs/02-design-decisions.md). Sources and research data: [docs/references.md](./docs/references.md).
+
+## Deployment (optional, after the demo)
+
+Planned: a single AWS EC2 (`ap-south-1`) running the same Docker Compose stack plus Caddy (automatic HTTPS) on one new subdomain. Only ports 80/443 are public. Steps, Caddyfile, security group and the reasons for not using managed services yet: [docs/11](./docs/11-deployment-aws.md).
+
+_Live URL: to be added if deployed._
 
 ## Demo video
 

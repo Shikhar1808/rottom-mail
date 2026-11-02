@@ -59,6 +59,17 @@ Sources fetched during the design discussion (2026-11-02), what each one support
 - **Slack:** `<!date^ts^{time}|fallback>` formatting, Block Kit, link buttons need interactivity, `auth.revoke`.
 - **Gmail:** the `gmail.send` scope is sensitive (needs verification) and Gmail has daily limits. `rfc822msgid:` search.
 - **Audit:** AWS CloudTrail log-file integrity validation (chained digests), WORM archiving for regulated email, Certificate Transparency (Merkle trees).
+- **Hosting / deployment:**
+  - Google requires HTTPS redirect URIs except for localhost, and its ID tokens expire after about 1 hour.
+  - Chrome's schemeful same-site rule means `http` and `https` count as different sites.
+  - The `__Host-` cookie prefix rules (`Secure`, `Path=/`, no `Domain`).
+  - Caddy obtains and renews Let's Encrypt certificates automatically.
+  - Amazon OpenSearch is a fork, and the `@elastic/elasticsearch` client rejects non-Elastic servers (product check).
+  - ElastiCache's default `maxmemory-policy` is `volatile-lru`.
+  - AWS charges for public IPv4 addresses.
+  - GoDaddy limits its DNS API to larger accounts, so automated DNS-01 certificate plugins won't work on small accounts.
+  - Elasticsearch on Linux wants `vm.max_map_count=262144`.
+  - Free GitHub accounts can't use GitHub Pages on private repos (hence a separate public relay repo).
 
 ## Still unverified (confirm during the build)
 
@@ -72,3 +83,5 @@ Sources fetched during the design discussion (2026-11-02), what each one support
 - [ ] How long Ethereal accounts last
 - [ ] `auth.revoke` disables the incoming webhook
 - [ ] BullMQ custom jobId character rules (we avoid `:` and use `-`)
+- [ ] Google consent screen: what "Authorized domains" requires for `rottom.your-domain.com` in Testing mode
+- [ ] Vite's dev proxy passes `Set-Cookie` and 302 `Location` headers through unchanged for `/auth/*` (expected, but test it)

@@ -8,10 +8,10 @@ Every decision made during the design discussion. Each one records the options w
 |---|---|---|---|
 | D1 | Frontend | Vite + React + TS + Tailwind | ✅ |
 | D2 | Database | Postgres + Prisma | ✅ |
-| D3 | Hosting | Subdomains `app.` + `api.` of one domain | ✅ |
+| D3 | Hosting | One origin: `rottom.<domain>`. Caddy (prod) / Vite proxy (local) routes `/api` `/auth` `/admin` to the private API | ✅ |
 | D4 | Login | Google OAuth on the backend, state + PKCE | ✅ |
-| D5 | Sessions | Random session ID cookie, session stored in Redis | 🟡 |
-| D6 | Local HTTPS | `mkcert`, with a tunnel as fallback | 🟡 |
+| D5 | Sessions | Random session ID cookie, session stored in Redis | ✅ |
+| D6 | Local HTTPS | mkcert on Vite only (for now). Relay page / real cert later | ✅ |
 | D7 | Slack connect | OAuth v2 `incoming-webhook`, encrypted, single-use state tied to the user | ✅ |
 | D8 | Slack messages | "Connected" + "limit reached" (per-sender / global) | ✅ |
 | D9 | Senders | Ethereal mailboxes auto-created per user (option B) | ✅ |
@@ -28,6 +28,9 @@ Every decision made during the design discussion. Each one records the options w
 | D20 | Audit | Append-only audit trail, no hash chain | ✅ |
 | D21 | Bull Board | Read-only, behind login, keeps recent completed jobs | ✅ |
 | D22 | Scaling | Workers per queue, graceful shutdown, `SMTP_MODE=fake` for load tests | ✅ |
+| D23 | Ethereal's own limit | Not relied on: our Redis limiter first, Ethereal's 4xx as a backstop | ✅ |
+| D24 | Deployment | Single EC2 + Docker Compose + Caddy, after the local demo | 🟡 |
+| D25 | Cookie names | `__Host-` prefix when served over https | 🟡 |
 | O1 | Compose fields | Form = plan, env caps = guard (two layers) | ❓ |
 | O2 | Sender rotation | One "From" per campaign for v1 | ❓ |
 | O3 | Per-sender limit column | One env cap for v1 | ❓ |
@@ -46,15 +49,16 @@ Every decision made during the design discussion. Each one records the options w
 - **Chosen:** Postgres + Prisma.
 - **Why:** schema, migrations and types with almost no setup. `updateMany({ where: { id, status: 'scheduled' } })` gives the atomic claim. Raw SQL migrations cover the audit trigger.
 
-### D3 · Hosting: subdomains of one domain ✅
+### D3 · Hosting: one origin ✅ (changed)
 - **Options:**
-  1. proxy, so the browser sees one domain
-  2. **subdomains** `app.mysite.com` + `api.mysite.com`
+  1. **one origin**, with a proxy routing paths to the API
+  2. subdomains `app.` + `api.`
   3. completely different sites (`*.vercel.app` + `*.onrender.com`)
-- **Chosen:** 2.
-- **Why:** the subdomains count as the *same site*, so `SameSite=Lax` cookies work. Option 3 makes the session a third-party cookie, which Safari blocks by default and Firefox isolates, so login breaks there.
-- **Cost:** CORS with `credentials: true` and the exact origin, `fetch(..., { credentials: 'include' })`, and an `Origin` check on writes (any `*.mysite.com` counts as same-site).
-- **Details:** [06 · Auth & Slack](./06-auth-slack.md#hosting-setup-2-subdomains)
+- **Chosen:** 1. Production uses one new GoDaddy A record for an unused subdomain (e.g. `rottom.your-domain.com`). Caddy forwards `/api`, `/auth`, `/admin` to the private `api:4000` and serves the built frontend for everything else. Locally, the Vite dev proxy does the same.
+- **History:** first chose 2 (same site, so cookies work). Switched because the user didn't want a public `api.` hostname, and with Caddy on one EC2, one origin is *simpler*: no CORS, no `credentials: 'include'`, first-party cookies.
+- **Option 3 rejected:** the session would be a third-party cookie, which Safari blocks and Firefox isolates, so login breaks there.
+- **Kept:** the `Origin` check on writes, as cheap CSRF protection.
+- **Details:** [06 · Auth & Slack](./06-auth-slack.md#hosting-one-origin), [11 · Deployment](./11-deployment-aws.md)
 
 ### D4 · Login: Google OAuth on the backend ✅
 - **Options:** backend redirect flow · frontend Google button + ID token · NextAuth · "Sign in with Slack".
@@ -62,14 +66,24 @@ Every decision made during the design discussion. Each one records the options w
 - **Why not Slack login:** the assignment requires Google. Slack login only gives identity, not posting permission. And neither provider fixes cross-domain cookies, because OAuth only covers the login moment, not the session after it.
 - **Details:** [06](./06-auth-slack.md#google-login)
 
-### D5 · Sessions: Redis-backed session cookie 🟡
-- **Options:** JWT in a cookie · random session ID cookie with the session in Redis.
-- **Recommended:** Redis sessions (`sess:<id>`, 7-day TTL).
-- **Why:** logout really ends the session, while a stolen JWT keeps working until it expires. Redis is already in the stack, AOF keeps sessions through restarts, and no JWT library is needed.
+### D5 · Sessions: Redis-backed session cookie ✅
+- **Why sessions at all:** OAuth only covers the login moment. Google's ID token lasts about 1 hour and can't be revoked, so the app needs its own session.
+- **Options:** Google's token · our own JWT cookie · **Redis session** · Postgres session table · in-memory.
+- **Chosen:** Redis sessions (`sess:<id>`, 7-day TTL). The cookie holds only a random 256-bit ID.
+- **Why:**
+  - logout really ends the session (delete the key), while a stolen JWT keeps working until it expires
+  - expiry is automatic (TTL), while a Postgres table would need a cleanup job, which breaks no-cron
+  - survives restarts (AOF) and works with several API servers
+  - Redis is already in the stack, and no JWT library is needed
+- **Details:** [06](./06-auth-slack.md#why-sessions-at-all)
 
-### D6 · Local HTTPS: mkcert 🟡
-- **Why HTTPS:** Slack requires HTTPS redirect URLs. Chrome treats `http` and `https` as different sites, so frontend and backend must use the same scheme.
-- **Recommended:** `mkcert` for `https://localhost:5173` + `https://localhost:4000`. If Slack's settings refuse `localhost`, use a `cloudflared` / `ngrok` tunnel.
+### D6 · Local HTTPS: mkcert, for now ✅ (changed)
+- **Why HTTPS locally:** only Slack needs it ("the `redirect_uri` must use HTTPS"). Google allows `http://localhost`.
+- **Chosen for now:** `mkcert` on **Vite only** (`https://localhost:5173`). Vite forwards to Express over plain HTTP, the same way Caddy does in production. If Slack's settings refuse `localhost`, use the relay page.
+- **Better fix later (if time allows):** an HTTPS relay page (GitHub Pages) that forwards to localhost, or `local.your-domain.com` → 127.0.0.1 with a real Let's Encrypt certificate (manual TXT record), or an ngrok static domain.
+- **Rejected:** moving the GoDaddy DNS to Cloudflare for a Cloudflare Tunnel. The domain already hosts a portfolio and another project, and one missed record would break them. We only **add new** records.
+- **Alerts can be tested without OAuth:** a dev-only script saves a manually created webhook.
+- **Details:** [06](./06-auth-slack.md#local-dev-and-slack)
 
 ### D7 · Slack connect ✅
 - **Chosen:** OAuth v2 with scope `incoming-webhook`. The user picks a workspace and channel.
@@ -178,6 +192,36 @@ Every decision made during the design discussion. Each one records the options w
 - Senders use pooled SMTP connections.
 - `SMTP_MODE=fake` (nodemailer `jsonTransport`) runs load tests of 1000+ emails without hitting Ethereal.
 - **Details:** [09](./09-scaling-impacts.md)
+
+### D23 · Don't rely on Ethereal's own 200/hr limit ✅
+- **Question raised:** Ethereal already limits public accounts to 200/hour and keeps messages for a while. Do we still need a Redis limiter?
+- **Yes**, because Ethereal's limit:
+  - isn't configurable via env
+  - has no minimum delay between sends
+  - knows nothing about campaign limits
+  - **rejects** instead of rescheduling to the next hour in order
+  - gives no signal "the moment the limit is reached" for Slack (we'd only find out after a bounce)
+  - and the assignment explicitly requires Redis/DB counters that are safe across workers
+  - It also doesn't exist in `SMTP_MODE=fake`, and every real provider has different rules.
+- **Real world:** senders throttle *before* the provider's limit. Repeated limit hits are treated as abuse and can get a mailbox suspended.
+- **Role of Ethereal's limit:** a backstop. If it's ever reached (e.g. one sender in global mode), SMTP 4xx moves the email to the next window.
+- **Ethereal's storage** is a preview inbox (a few hours), not a job store. Schedules live in Postgres + Redis.
+- **Details:** [04](./04-rate-limiting.md#why-not-just-rely-on-ethereals-limit)
+
+### D24 · Deployment: single EC2 + Docker Compose + Caddy 🟡
+- **Options:** **one EC2 running the same compose stack + Caddy** · managed (S3/CloudFront, ECS, RDS, ElastiCache, OpenSearch, ALB).
+- **Recommended:** one EC2 (t3.medium+, `ap-south-1`) with an Elastic IP and one new GoDaddy A record. Caddy provides automatic Let's Encrypt. Only 80/443 are public (22 from your IP).
+- **When:** **after** the local demo is recorded (P2).
+- **Why not managed now:**
+  - AWS's search is **OpenSearch**, which the `@elastic/elasticsearch` client rejects
+  - ElastiCache defaults to an **evicting** memory policy (needs `noeviction`), and its persistence differs from AOF
+  - wiring VPC, ECS, ALB and ACM takes too long for the deadline
+- **Details:** [11](./11-deployment-aws.md)
+
+### D25 · `__Host-` cookie prefix 🟡
+- **Why:** with a domain that hosts other sites, a compromised sibling subdomain could plant a cookie for the whole domain ("cookie tossing"), e.g. a fake session or a fake `g_oauth`. Browsers only accept a `__Host-` cookie if it's `Secure`, has `Path=/` and has no `Domain`, so siblings can't create one.
+- **How:** `__Host-sid` and `__Host-g_oauth` (path `/`) when `APP_URL` is https. Plain `sid` / `g_oauth` on `http://localhost`.
+- **Details:** [06](./06-auth-slack.md#whats-in-the-cookies)
 
 ---
 

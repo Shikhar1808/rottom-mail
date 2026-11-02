@@ -1,57 +1,113 @@
-# 06 · Auth (Google) and Slack
+# 06 · Auth (Google), sessions and Slack
 
-## Hosting: setup 2 (subdomains)
+## Hosting: one origin
 
-| Setup | Example | Login cookie works? | Needs |
-|---|---|---|---|
-| 1. Proxy (browser sees one domain) | Vercel rewrites `/api` → Render | ✅ | Rewrite rules |
-| **2. Subdomains (chosen)** | `app.mysite.com` + `api.mysite.com` | ✅ same site | CORS with credentials + exact origin, `credentials: 'include'` |
-| 3. Different sites | `myapp.vercel.app` + `myapi.onrender.com` | ⚠️ third-party cookie: **Safari blocks, Firefox isolates** | Would need a token in a header instead (more code, XSS risk) |
+| Setup | Example | Login cookie | Needs | Status |
+|---|---|---|---|---|
+| **1. One origin** | `rottom.your-domain.com` serves the frontend, and `/api`, `/auth`, `/admin` are forwarded to the private backend | ✅ first-party | Caddy (prod) / Vite proxy (local) | ✅ **chosen** |
+| 2. Subdomains | `app.your-domain.com` + `api.your-domain.com` | ✅ same site | CORS with credentials + exact origin, `credentials: 'include'` | superseded |
+| 3. Different sites | `myapp.vercel.app` + `myapi.onrender.com` | ⚠️ third-party cookie: **Safari blocks, Firefox isolates** | token in a header instead (more code, XSS risk) | rejected |
 
-Cookies are grouped by **site** (`mysite.com`), not by full domain. `app.` and `api.` of one domain are the same site. Hosting suffixes like `vercel.app` count as their own top-level suffix, so two `*.vercel.app` apps are different sites.
+**Why we moved from 2 to 1:** the user didn't want a public `api.` hostname. With Caddy on one EC2, routing by path is *simpler* than two subdomains: no CORS setup, no `credentials: 'include'`, and the cookies are first-party.
+
+Cookies are grouped by **site**, not by full domain. Hosting suffixes like `vercel.app` count as their own top-level suffix, so two `*.vercel.app` apps are different sites. That's why setup 3 breaks.
+
+**What's public:**
+```
+Internet ──443 (HTTPS)──▶ Caddy ──plain HTTP──▶ api:4000            (private)
+                                                  │
+                                    postgres · redis · elasticsearch  (private)
+                     workers: no inbound connections at all
+```
+| Piece | Reachable from the internet? |
+|---|---|
+| Caddy :443 | ✅ the only public entry |
+| Express :4000 | ❌ private Docker network only |
+| Workers | ❌ nothing listens |
+| Postgres / Redis / ES | ❌ never |
+
+The browser still has to reach `/api` and `/auth`: the React app runs on the user's machine, and Google and Slack redirect the browser to our callbacks. That entry must be HTTPS because:
+- **Slack** rejects non-HTTPS redirect URLs.
+- **Google** requires HTTPS for any redirect URI other than localhost.
+- **Cookies:** `Secure` / `__Host-` cookies are only sent over HTTPS.
+- **Without HTTPS,** cookies would travel in plain text.
+
+HTTPS doesn't expose anything extra; it encrypts what's already reachable. Full deployment details: [11](./11-deployment-aws.md).
 
 **Wiring:**
-- `app.use(cors({ origin: env.APP_URL, credentials: true }))`. The frontend uses `fetch(\`${VITE_API_URL}/api/...\`, { credentials: 'include' })`.
-- Session cookie `sid` is set by `api.mysite.com` with `httpOnly; Secure; SameSite=Lax`. **No `Domain` attribute**, so other subdomains can't read it.
-- **Origin check:** POST/PUT/DELETE must have `Origin === APP_URL` and JSON content. `SameSite` treats every `*.mysite.com` as the same site, so a compromised `blog.mysite.com` could otherwise send requests with the cookie.
-- **Local dev mirrors production:** `https://localhost:5173` (frontend) and `https://localhost:4000` (API). Different ports means a different origin (CORS is exercised) but the same site (cookies work). Both use HTTPS via `mkcert`, because Slack needs HTTPS redirect URLs and Chrome treats `http` and `https` as different sites. If Slack's settings refuse `localhost`, use a `cloudflared` / `ngrok` tunnel (to confirm).
-- Every redirect is built from `APP_URL` / `API_URL` (env), **never from the `Host` header**.
+- The frontend calls **relative** URLs (`fetch('/api/...')`). Same origin, so the cookie is sent automatically and there's no CORS middleware.
+- **Origin check (kept):** POST/PUT/DELETE must have `Origin === APP_URL` and JSON content. It's cheap protection against cross-site request forgery on top of `SameSite=Lax`.
+- Every redirect is built from `APP_URL` / `SLACK_REDIRECT_URI` (env), **never from the `Host` header**. Behind a proxy, that header can hold the internal address.
 
-**Why OAuth provider choice doesn't matter for cross-domain:** OAuth (Google or Slack) only answers "who is this?" at login. The app's own session cookie answers "still them?" on every request, and that cookie is what domain setup affects.
+## Why sessions at all
+
+OAuth covers **one moment**: login. Google confirms "this is prithvi@gmail.com" and steps out. On every request after that, **our app** has to remember the user. That's the session.
+
+```
+LOGIN (once):    Browser ⇄ Google → ID token (valid ~1 hour) → API verifies → creates OUR session → cookie
+EVERY REQUEST:   Browser → API (cookie) → Redis sess:<id> → userId        (Google no longer involved)
+```
+
+Using Google's token as the session doesn't work: it **expires after about 1 hour** (keeping you logged in would mean storing Google refresh tokens, which are sensitive), and **logout can't kill it**.
+
+| Option | Logout really ends it | Survives restart | Several API servers | Cleanup of old sessions | Cost per request |
+|---|---|---|---|---|---|
+| Google's token | ❌ | ✅ | ✅ | none | verify signature |
+| Our own JWT cookie | ❌ (until expiry, unless a blocklist, which needs Redis anyway) | ✅ | ✅ | none | ~0 |
+| **Redis session** ✅ | ✅ instant (delete the key) | ✅ AOF | ✅ | **automatic** (TTL expiry) | 1 Redis read (<1ms) |
+| Postgres session table | ✅ | ✅ | ✅ | expired rows need deleting, which means a **scheduled job** (breaks no-cron) | 1 DB query |
+| In-memory | ✅ | ❌ | ❌ | automatic | ~0 |
+
+## What's in the cookies
+
+| Name (https / plain http) | Value | Path | Lifetime | Flags |
+|---|---|---|---|---|
+| `__Host-sid` / `sid` | **only a random 256-bit ID** (43 chars). No name, email, user ID or tokens | `/` | 7 days | HttpOnly, Secure (https), SameSite=Lax |
+| `__Host-g_oauth` / `g_oauth` | `{ state, codeVerifier }` during Google login | `/` | ≤ 10 min, **deleted in the callback** | HttpOnly, Secure (https), SameSite=Lax |
+
+- Nothing else lives in the browser: no Google tokens, no Slack data (Slack `state` is in Redis), nothing in `localStorage`. The frontend learns who you are only from `GET /api/me`.
+- **`__Host-` prefix:** browsers only accept a `__Host-` cookie if it's `Secure`, has `Path=/` and has no `Domain`. Any other subdomain of your domain therefore can't plant a fake session or login cookie ("cookie tossing").
+- On plain `http://localhost` the prefix and `Secure` are switched off automatically:
+
+```ts
+const https = env.APP_URL.startsWith('https://');
+export const cookieName = (n: string) => (https ? `__Host-${n}` : n);
+export const cookieOpts = { httpOnly: true, secure: https, sameSite: 'lax', path: '/' } as const;
+```
 
 ## Google login
 
 **Google Cloud Console (once):**
 - OAuth client of type "Web application".
-- Redirect URIs: `https://localhost:4000/auth/google/callback` and `https://api.mysite.com/auth/google/callback`.
-- Consent screen: External, **Testing** mode, with you and the reviewers added as **test users** (only test users can sign in while in testing mode).
+- Redirect URIs: `https://localhost:5173/auth/google/callback` (local, through the Vite proxy) and `https://rottom.your-domain.com/auth/google/callback`.
+- Consent screen: External, **Testing** mode, with you and the reviewers as **test users** (only test users can sign in while in testing mode). Add your domain to the authorized domains (exact requirements still to confirm).
 
 ```mermaid
 sequenceDiagram
-  participant B as Browser (app.)
-  participant A as API (api.)
+  participant B as Browser
+  participant A as API via Caddy or Vite proxy
   participant G as Google
   B->>A: GET /auth/google (full page navigation)
   A->>A: create state + PKCE verifier
   A-->>B: 302 to Google + short cookie g_oauth (10 min)
   B->>G: consent screen
-  G-->>B: 302 /auth/google/callback?code + state
+  G-->>B: 302 /auth/google/callback with code + state
   B->>A: GET callback (cookie g_oauth sent)
   A->>A: state matches cookie?
   A->>G: exchange code + verifier for tokens
   A->>A: verify ID token (signature, audience, expiry, email_verified)
   A->>A: upsert User by Google sub, create Redis session, audit login
-  A-->>B: 302 APP_URL/dashboard + cookie sid
+  A-->>B: 302 APP_URL/dashboard + session cookie
 ```
 
 ```ts
-const google = new OAuth2Client(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET, `${env.API_URL}/auth/google/callback`);
-const tmp = { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 600_000, path: '/auth/google' } as const;
+const google = new OAuth2Client(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET, `${env.APP_URL}/auth/google/callback`);
+const OAUTH = cookieName('g_oauth');
 
 router.get('/auth/google', async (_req, res) => {
   const state = crypto.randomBytes(32).toString('base64url');
   const { codeVerifier, codeChallenge } = await google.generateCodeVerifierAsync();
-  res.cookie('g_oauth', JSON.stringify({ state, codeVerifier }), tmp);
+  res.cookie(OAUTH, JSON.stringify({ state, codeVerifier }), { ...cookieOpts, maxAge: 600_000 });
   res.redirect(google.generateAuthUrl({
     scope: ['openid', 'email', 'profile'], state, prompt: 'select_account',
     code_challenge: codeChallenge, code_challenge_method: CodeChallengeMethod.S256,
@@ -60,8 +116,8 @@ router.get('/auth/google', async (_req, res) => {
 
 router.get('/auth/google/callback', async (req, res) => {
   const fail = (why: string) => res.redirect(`${env.APP_URL}/login?error=${why}`);
-  const saved = JSON.parse(req.cookies.g_oauth ?? 'null');
-  res.clearCookie('g_oauth', tmp);
+  const saved = JSON.parse(req.cookies[OAUTH] ?? 'null');
+  res.clearCookie(OAUTH, cookieOpts);
   if (req.query.error) return fail('cancelled');
   if (!saved || req.query.state !== saved.state) return fail('state');
   try {
@@ -83,31 +139,33 @@ router.get('/auth/google/callback', async (req, res) => {
 **Sessions (Redis):**
 ```ts
 const TTL = 7 * 24 * 3600;
+const SID = cookieName('sid');
 export async function createSession(res, userId: string) {
   const sid = crypto.randomBytes(32).toString('base64url');
   await redis.set(`sess:${sid}`, userId, 'EX', TTL);
-  res.cookie('sid', sid, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: TTL * 1000 });
+  res.cookie(SID, sid, { ...cookieOpts, maxAge: TTL * 1000 });
 }
 export const requireAuth = async (req, res, next) => {
-  const userId = req.cookies.sid && await redis.get(`sess:${req.cookies.sid}`);
+  const userId = req.cookies[SID] && await redis.get(`sess:${req.cookies[SID]}`);
   if (!userId) return res.status(401).json({ error: 'unauthenticated' });
   req.userId = userId; next();
 };
-// POST /auth/logout → redis.del(`sess:${sid}`), clearCookie('sid'), audit 'logout'
+// POST /auth/logout → redis.del(`sess:${sid}`), clearCookie(SID), audit 'logout'
 // GET  /api/me      → { name, email, avatarUrl }
 ```
 
-- Only `openid email profile` is requested. **Google tokens are not stored**, because we only need to know who the user is.
-- **Frontend:** the button does `window.location.href = \`${API_URL}/auth/google\`` (a fetch can't follow OAuth redirects). `useMe()` calls `/api/me`, and a 401 goes to `/login`. The avatar uses `referrerPolicy="no-referrer"`, with initials as the fallback. `/login?error=…` shows a toast.
-- There's no `?next=` parameter: login always lands on `/dashboard`, so it can't be used to redirect users to another site.
+- Only `openid email profile` is requested. **Google tokens are not stored.**
+- **Frontend:** the button does `window.location.href = '/auth/google'` (a fetch can't follow OAuth redirects). `useMe()` calls `/api/me`, and a 401 goes to `/login`. The avatar uses `referrerPolicy="no-referrer"`, with initials as the fallback. `/login?error=…` shows a toast.
+- There's no `?next=` parameter: login always lands on `/dashboard`, so it can't be used to redirect users elsewhere.
 
 ## Slack connect
 
 **Slack app (once, at api.slack.com/apps):**
 - Create "ReachInbox Alerts" and turn on **Incoming Webhooks**.
-- Redirect URLs (must be HTTPS): `https://localhost:4000/api/slack/callback` and `https://api.mysite.com/api/slack/callback`.
+- Redirect URLs (must be HTTPS): `https://localhost:5173/api/slack/callback` (local) and `https://rottom.your-domain.com/api/slack/callback`.
 - Scope: `incoming-webhook`.
-- **Manage Distribution:** turn on only if people outside your own workspace will connect.
+- **Manage Distribution:** turn on only if people outside your workspace will connect.
+- `SLACK_REDIRECT_URI` (env) holds the URL for the current environment. It's used in **both** the authorize link and `oauth.v2.access`, which must match.
 
 **What the user sees:** "Connect Slack" → Slack page (pick workspace + **channel**) → Allow → back on the dashboard with a "Slack connected" toast and a ✅ test message in the channel → the button reads "✓ #email-alerts · Acme" with a Disconnect option.
 
@@ -119,9 +177,9 @@ sequenceDiagram
   participant S as Slack
   B->>A: GET /api/slack/connect (session)
   A->>R: SET slack_state:STATE = userId EX 600
-  A-->>B: 302 slack.com/oauth/v2/authorize?scope=incoming-webhook + state
+  A-->>B: 302 slack.com/oauth/v2/authorize with scope incoming-webhook + state
   B->>S: pick workspace + channel, Allow
-  S-->>B: 302 /api/slack/callback?code + state
+  S-->>B: 302 /api/slack/callback with code + state
   B->>A: GET callback (session cookie sent)
   A->>R: GETDEL slack_state:STATE (must equal the session user)
   A->>S: POST oauth.v2.access (code)
@@ -136,7 +194,7 @@ router.get('/api/slack/connect', requireAuth, async (req, res) => {
   const state = crypto.randomBytes(32).toString('base64url');
   await redis.set(`slack_state:${state}`, req.userId, 'EX', 600);
   res.redirect('https://slack.com/oauth/v2/authorize?' + new URLSearchParams({
-    client_id: env.SLACK_CLIENT_ID, scope: 'incoming-webhook', state, redirect_uri: SLACK_REDIRECT,
+    client_id: env.SLACK_CLIENT_ID, scope: 'incoming-webhook', state, redirect_uri: env.SLACK_REDIRECT_URI,
   }));
 });
 
@@ -147,7 +205,7 @@ router.get('/api/slack/callback', requireAuth, async (req, res) => {
   if (!owner || owner !== req.userId) return back('error');      // forged / expired / someone else's
   const r = await fetch('https://slack.com/api/oauth.v2.access', { method: 'POST', body: new URLSearchParams({
     client_id: env.SLACK_CLIENT_ID, client_secret: env.SLACK_CLIENT_SECRET,
-    code: String(req.query.code), redirect_uri: SLACK_REDIRECT,
+    code: String(req.query.code), redirect_uri: env.SLACK_REDIRECT_URI,
   }) }).then(r => r.json());
   if (!r.ok) return back('error');
   // upsert SlackIntegration: webhookUrlEnc = encrypt(r.incoming_webhook.url), accessTokenEnc = encrypt(r.access_token),
@@ -160,6 +218,36 @@ router.get('/api/slack/callback', requireAuth, async (req, res) => {
 ```
 
 **Why `state` is single use and tied to the user:** Slack's docs say to treat a `state` mismatch as a forgery. Tying it to the logged-in user also stops an attacker from tricking you into attaching *your* Slack channel to *their* account.
+
+## Local dev and Slack
+
+**Now: mkcert, on Vite only.** Only the browser-facing server needs HTTPS. Vite forwards to Express over plain HTTP, the same way Caddy does in production.
+
+```powershell
+choco install mkcert        # or: scoop install mkcert, or the .exe from GitHub releases
+mkcert -install             # trust the local certificate authority (one time)
+mkcert localhost            # → localhost.pem + localhost-key.pem  (git-ignored: *.pem)
+```
+```ts
+// vite.config.ts
+server: {
+  port: 5173,
+  https: { key: fs.readFileSync('../localhost-key.pem'), cert: fs.readFileSync('../localhost.pem') },
+  proxy: { '/api': 'http://localhost:4000', '/auth': 'http://localhost:4000', '/admin': 'http://localhost:4000' },
+}
+```
+- Local env: `APP_URL=https://localhost:5173`, `SLACK_REDIRECT_URI=https://localhost:5173/api/slack/callback`.
+- **Never share `rootCA-key.pem`** (the authority's private key that mkcert creates). Anyone holding it could fake HTTPS sites on your machine.
+- **Test alerts without OAuth:** Slack app → Incoming Webhooks → "Add New Webhook to Workspace", then `npm run dev:slack-webhook <url>` (dev-only script) saves it for your user. Sending the alert is an outgoing call, so it works from localhost with nothing else.
+
+**If Slack's settings refuse `localhost`, or later for a proper setup:**
+| Fix | How | Trade-off |
+|---|---|---|
+| HTTPS relay page | A public GitHub Pages repo whose page runs `location.replace('https://localhost:5173/api/slack/callback' + location.search)`. Register that page as the Slack redirect and in `SLACK_REDIRECT_URI` | 5 min, free, no DNS. The "public HTTPS intermediate" pattern. Safe: the page only forwards to localhost, and the `code` is single-use and needs our client secret |
+| `local.your-domain.com` with a real certificate | **New** GoDaddy A record → `127.0.0.1` + a Let's Encrypt certificate via one manual TXT record (`certbot/certbot` in Docker; on Windows use the `archive/` files) | Uses your domain, nothing exposed, 90-day manual renewal |
+| ngrok static domain | `ngrok http --url=something.ngrok-free.app 5173` | No local HTTPS. One-time warning page. Local app reachable while it runs |
+
+**Not chosen:** moving the domain's DNS to Cloudflare (for a Cloudflare Tunnel). The domain already hosts a portfolio and another project, and one missed record would break them. We only ever **add new** records.
 
 ## Alert delivery
 
@@ -178,7 +266,7 @@ limit reached (atomic counter: count == limit)  →  notifications job (jobId sl
 - Errors are classified by **Slack's error string**, not the HTTP status. Slack documents the strings but not a clear status code for each.
 - **Disconnect:** the alert skips quietly.
 - **Removed on Slack's side:** the next alert gets a permanent error, so the integration is marked broken and the UI shows "Reconnect Slack".
-- **Reconnect:** the same connect flow, and the upsert replaces the webhook. It works immediately because the worker reads the DB on every alert.
+- **Reconnect:** the same flow, and the upsert replaces the webhook. It works immediately because the worker reads the DB on every alert.
 
 ## Slack messages
 
@@ -199,16 +287,16 @@ limit reached (atomic counter: count == limit)  →  notifications job (jobId sl
       { "type": "mrkdwn", "text": "*Moved to next window*\n37 emails" },
       { "type": "mrkdwn", "text": "*Resumes*\n<!date^1730556000^{time}|15:00 UTC>" } ] },
     { "type": "context", "elements": [ { "type": "mrkdwn",
-      "text": "Campaign: Q4 pricing outreach · per-sender mode · <https://app.mysite.com/dashboard|Open dashboard>" } ] }
+      "text": "Campaign: Q4 pricing outreach · per-sender mode · <https://rottom.your-domain.com/dashboard|Open dashboard>" } ] }
   ]
 }
 ```
 
 - **`text`:** the plain fallback, used in phone notifications.
-- **"37 emails":** one count query at the moment of the hit (this user's `scheduled` emails for that sender due before the window ends).
-- **`<!date^…>`:** shows the time in each reader's timezone, so no user timezone is stored.
-- **Dashboard link:** a plain text link, not a button. A button would need Slack's interactivity settings.
-- **Escaping:** `&`, `<` and `>` are escaped in user text, so a subject like `<!channel>` can't ping the whole channel.
+- **"37 emails":** one count query at the moment of the hit.
+- **`<!date^…>`:** shows each reader's own timezone.
+- **Dashboard link:** a plain text link, not a button (a button would need Slack's interactivity settings).
+- **Escaping:** `&`, `<` and `>` are escaped in user text, so a subject like `<!channel>` can't ping everyone.
 - **Skipped:** "limit cleared" (needs a timer), daily summaries (needs cron), "campaign finished".
 
 ## Why not "Sign in with Slack"
@@ -218,21 +306,22 @@ limit reached (atomic counter: count == limit)  →  notifications job (jobId sl
 | Sign in with Slack | `openid email profile` | who you are |
 | Our Connect Slack | `incoming-webhook` | permission to post into a channel |
 
-The assignment requires Google login, and posting needs `incoming-webhook` either way. "Connect Slack" already *is* OAuth with your Slack account; it just asks for a different permission.
+The assignment requires Google login, and posting needs `incoming-webhook` either way. Neither provider replaces our own session.
 
 ## Why not send from the user's Gmail
 
-Login asks for no mail permission. Sending through Gmail would need the `gmail.send` scope: it's sensitive (Google app verification is required before real users can use it), and Gmail has its own daily limits. The assignment says to use Ethereal. Senders are a table, so a "Gmail sender" type could be added later.
+Login asks for no mail permission. Sending through Gmail needs the `gmail.send` scope: it's sensitive (Google app verification is required), and Gmail has its own daily limits. The assignment says to use Ethereal. Senders are a table, so a "Gmail sender" type could be added later.
 
 ## Security checklist
 
 - [ ] Google: `state` + PKCE S256, ID token verified, `email_verified` required, user keyed by `sub`
-- [ ] Sessions: random 256-bit ID, Redis TTL 7d, `httpOnly; Secure; SameSite=Lax`, logout deletes the key
+- [ ] Sessions: random 256-bit ID, Redis TTL 7d, `__Host-` + `HttpOnly; Secure; SameSite=Lax; Path=/` on https, logout deletes the key
 - [ ] Slack `state`: random, single use (`GETDEL`), 10 min, must match the session user
 - [ ] Webhook URL, Slack token and Ethereal passwords encrypted (AES-256-GCM, `node:crypto`, `ENCRYPTION_KEY`), never returned or logged
-- [ ] CORS: exact `APP_URL` origin + credentials. `Origin` check + JSON-only on writes
+- [ ] One origin, no CORS. `Origin` check + JSON-only on writes
+- [ ] Only Caddy :443 public. Express, workers and databases private ([11](./11-deployment-aws.md))
 - [ ] Redirects built from env, no `?next=`
 - [ ] Every query filtered by `userId` from the session (including the second check in ES search)
 - [ ] User text escaped in Slack messages
 - [ ] Bull Board behind login, read-only
-- [ ] `.env` git-ignored, only `.env.example` committed
+- [ ] `.env`, `*.pem`, `certs/` git-ignored. Only `.env.example` committed

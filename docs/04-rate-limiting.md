@@ -131,6 +131,25 @@ Example: 1000 emails from one sender, limit 200/window, 2s delay.
 - `hitLimit` comes from the atomic counter (`count == limit`), so the alert fires **exactly once per window** without an extra dedupe key. It's queued on `notifications` with `jobId = slack-<user>-<sender|global>-<window>`.
 - The message says how many emails are still due this window (one count query) and when sending resumes ([06](./06-auth-slack.md#slack-messages)).
 
+## Why not just rely on Ethereal's limit?
+
+Ethereal limits public accounts to **200 messages/hour** (then rejects until the next hour) and keeps caught messages for a few hours. Neither replaces our limiter:
+
+| Assignment requires | Ethereal's 200/hr limit | Our Redis limiter |
+|---|---|---|
+| Limit configurable via env | ❌ fixed at 200 | ✅ |
+| Minimum delay between sends | ❌ a burst of 200 is fine | ✅ 2s gap |
+| Hourly limit from the compose form | ❌ knows nothing about campaigns | ✅ |
+| When reached: delay to the next hour, keep order | ❌ just **rejects** | ✅ next window, in order |
+| Slack **the moment** it's reached | ❌ we'd only learn after a bounce | ✅ fires at `count == limit`, exactly once |
+| Redis/DB counters, safe across workers | ❌ not ours, invisible to us | ✅ atomic Lua / `INCR` |
+| Works in `SMTP_MODE=fake` | ❌ no Ethereal there | ✅ |
+| Works after switching providers | ❌ every provider differs | ✅ same code, new env values |
+
+- **Real world:** senders throttle *before* the provider's limit. Gmail, Outlook and SendGrid treat repeated limit hits as abuse and can suspend the mailbox or hurt its deliverability.
+- **How they fit:** our limiter runs first (cap ≤ 200 per sender), so Ethereal's limit is normally never reached. If it is (e.g. one sender in global mode), Ethereal's SMTP 4xx moves the email to the next window (below).
+- **Ethereal's storage** is a preview inbox, not a job store. It doesn't know what's still to be sent or when. That lives in Postgres + Redis and must survive restarts for days.
+
 ## SMTP reply handling
 
 | Reply | Meaning | Action |
