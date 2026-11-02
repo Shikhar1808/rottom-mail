@@ -6,7 +6,8 @@ import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { prisma } from '../db';
 import type { EmailJob } from '../queues';
 import { transportFor } from '../services/mailer';
-import { audit, type AuditInput, updateEmail } from '../services/emails';
+import { audit, type Ev, updateEmail } from '../services/emails';
+import { gate, nextWindow, sleepUntil } from '../services/limiter';
 
 const LOCK_MS = 30_000; // BullMQ's default lock; a claim younger than this may still be in progress
 const actor = `worker:${os.hostname()}:${process.pid}`;
@@ -17,7 +18,7 @@ type SmtpError = Error & { responseCode?: number; code?: string };
 export async function processEmail(job: Job<EmailJob>, token?: string) {
   const email = await prisma.email.findUnique({ where: { id: job.data.emailId }, include: { campaign: true, sender: true } });
   if (!email) return;
-  const ev = (type: string, data?: Prisma.InputJsonValue): AuditInput => ({
+  const ev: Ev = (type, data) => ({
     userId: email.userId,
     campaignId: email.campaignId,
     type,
@@ -28,6 +29,8 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
 
   if (email.status === 'sending') return recoverAfterCrash(job, token, email, ev);
   if (email.status !== 'scheduled') return; // already sent / failed / parked: nothing to do
+
+  await gate(job, token, email, ev); // rate limits: returns when it's this email's turn, else moves the job and throws
 
   // Atomic claim: of any number of workers, exactly one moves the row from scheduled to sending.
   const claimed = await updateEmail(email.id, { status: 'sending', claimedAt: new Date(), attempts: { increment: 1 } }, ev('claimed'), ['scheduled']);
@@ -46,7 +49,7 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
       messageId: `<${email.id}@reachinbox.local>`, // fixed id: lets a crash check find it at the server later
     });
   } catch (err) {
-    return handleSendError(job, email, err as SmtpError, ev);
+    return handleSendError(job, token, email, err as SmtpError, ev);
   }
 
   // If this write fails the row stays "sending": the retry goes through recoverAfterCrash, never a blind resend.
@@ -57,7 +60,7 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
   if (!(await updateEmail(email.id, sent, event, ['sending']))) await updateEmail(email.id, sent, event, ['needs_check']);
 }
 
-async function handleSendError(job: Job<EmailJob>, email: LoadedEmail, err: SmtpError, ev: (t: string, d?: Prisma.InputJsonValue) => AuditInput) {
+async function handleSendError(job: Job<EmailJob>, token: string | undefined, email: LoadedEmail, err: SmtpError, ev: Ev) {
   const code = err.responseCode;
   const error = String(err.message).slice(0, 500);
   const fail = (reason: string) =>
@@ -78,15 +81,14 @@ async function handleSendError(job: Job<EmailJob>, email: LoadedEmail, err: Smtp
     await updateEmail(email.id, { status: 'needs_check', error }, ev('needs_check', { reason: 'no SMTP reply', error, code: err.code ?? null }), ['sending']);
     throw new UnrecoverableError(error);
   }
-  if (job.attemptsMade + 1 >= (job.opts.attempts ?? 1)) {
-    await fail(error); // out of retries: lands in BullMQ's failed set (the DLQ)
-    throw err;
-  }
-  await updateEmail(email.id, { status: 'scheduled', error }, ev('send_failed', { error, code, willRetry: true }), ['sending']);
-  throw err; // BullMQ retries with exponential backoff
+  // 4xx is temporary (e.g. Ethereal's 200/hour): move to the next window without using an attempt.
+  // shortcut: a 4xx that never clears keeps moving one window at a time; add a max-deferrals cap if that shows up.
+  const until = nextWindow();
+  await updateEmail(email.id, { status: 'scheduled', scheduledAt: new Date(until), error }, ev('smtp_deferred', { error, code, newTime: new Date(until).toISOString() }), ['sending']);
+  throw await sleepUntil(job, token, until);
 }
 
-async function recoverAfterCrash(job: Job<EmailJob>, token: string | undefined, email: LoadedEmail, ev: (t: string, d?: Prisma.InputJsonValue) => AuditInput) {
+async function recoverAfterCrash(job: Job<EmailJob>, token: string | undefined, email: LoadedEmail, ev: Ev) {
   if (Date.now() - (email.claimedAt?.getTime() ?? 0) < LOCK_MS) {
     await job.moveToDelayed(Date.now() + LOCK_MS, token); // the claiming worker may still be mid-send
     throw new DelayedError();

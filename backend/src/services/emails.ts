@@ -14,6 +14,9 @@ export type AuditInput = {
   data?: Prisma.InputJsonValue;
 };
 
+/** Builds an audit event for one email/job; the worker and the limiter each make one per job. */
+export type Ev = (type: string, data?: Prisma.InputJsonValue) => AuditInput;
+
 export function audit(event: AuditInput, db: Prisma.TransactionClient = prisma) {
   return db.auditEvent.create({ data: event });
 }

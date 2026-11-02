@@ -4,14 +4,17 @@ import { ExpressAdapter } from '@bull-board/express';
 import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
+import { devLogin } from './config';
 import { prisma } from './db';
 import { HttpError } from './http';
 import { originCheck } from './middleware/originCheck';
 import { allQueues } from './queues';
+import { authRouter } from './routes/auth';
 import { campaignsRouter } from './routes/campaigns';
 import { emailsRouter } from './routes/emails';
 import { sendersRouter } from './routes/senders';
-import { destroySession, requireAuth } from './session';
+import { slackRouter } from './routes/slack';
+import { requireAuth } from './session';
 
 function bullBoard() {
   const adapter = new ExpressAdapter();
@@ -28,21 +31,19 @@ export function createApp() {
   app.use(originCheck);
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, devLogin }); // the login page shows the dev button only when this is on
   });
   app.get('/api/me', requireAuth, async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, name: true, email: true, avatarUrl: true } });
     if (!user) throw new HttpError(401, 'unauthenticated');
     res.json(user);
   });
-  app.post('/auth/logout', async (req, res) => {
-    await destroySession(req, res);
-    res.json({ ok: true });
-  });
+  app.use('/auth', authRouter);
 
   app.use('/api/senders', requireAuth, sendersRouter);
   app.use('/api/campaigns', requireAuth, campaignsRouter);
   app.use('/api/emails', requireAuth, emailsRouter);
+  app.use('/api/slack', requireAuth, slackRouter);
   app.use('/admin/queues', requireAuth, bullBoard());
 
   app.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {

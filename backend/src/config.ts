@@ -13,8 +13,8 @@ const int = (def: number) => z.coerce.number().int().nonnegative().default(def);
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().default('redis://localhost:6380'),
-  ELASTICSEARCH_URL: z.string().default('http://localhost:9200'),
+  REDIS_URL: z.string().default('redis://127.0.0.1:6380'),
+  ELASTICSEARCH_URL: z.string().default('http://127.0.0.1:9200'),
   APP_URL: z.url(),
   PORT: int(4000),
 
@@ -34,6 +34,7 @@ const schema = z.object({
   RATE_LIMIT_WINDOW_MS: int(3_600_000),
 
   SMTP_MODE: z.enum(['ethereal', 'fake']).default('ethereal'),
+  DEV_LOGIN: z.stringbool().default(false), // one-click login as dev@example.com; never in production
   DEFAULT_SENDERS_PER_USER: int(2),
   MAX_SENDERS_PER_USER: int(5),
 });
@@ -46,3 +47,4 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export const isHttps = env.APP_URL.startsWith('https://');
+export const devLogin = env.DEV_LOGIN && env.NODE_ENV !== 'production';

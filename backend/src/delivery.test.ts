@@ -7,6 +7,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 const { sendMail } = vi.hoisted(() => ({ sendMail: vi.fn() }));
 vi.mock('./services/mailer', () => ({ transportFor: () => ({ sendMail }) }));
+// Rate limits have their own tests (services/limiter.test.ts); here every email may send right away.
+vi.mock('./services/limiter', async (importOriginal) => ({ ...(await importOriginal<object>()), gate: async () => undefined }));
 vi.mock('./queues', async () => {
   const { Queue } = await import('bullmq');
   const { redis } = await import('./redis');
@@ -30,7 +32,7 @@ const campaignId = crypto.randomUUID();
 const newEmail = async () =>
   (await prisma.email.create({ data: { campaignId, userId, senderId, toEmail: `${crypto.randomUUID()}@test.local`, scheduledAt: new Date() } })).id;
 const status = async (id: string) => (await prisma.email.findUniqueOrThrow({ where: { id } })).status;
-const fakeJob = (emailId: string) => ({ data: { emailId }, attemptsMade: 0, opts: { attempts: 8 }, moveToDelayed: vi.fn() }) as unknown as Job<EmailJob>;
+const fakeJob = (emailId: string) => ({ data: { emailId }, attemptsMade: 0, opts: { attempts: 8 }, moveToDelayed: vi.fn(), updateData: vi.fn() }) as unknown as Job<EmailJob>;
 const smtpError = (responseCode?: number, code?: string) => Object.assign(new Error(`smtp ${responseCode ?? code}`), { responseCode, code });
 const accepted = { messageId: 'm', response: '250 Accepted' };
 
@@ -66,7 +68,7 @@ describe('processEmail', () => {
     expect(await status(id)).toBe('sent');
   });
 
-  it('5xx fails, 4xx goes back to scheduled, no SMTP reply parks as needs_check', async () => {
+  it('5xx fails, 4xx moves to the next window, no SMTP reply parks as needs_check', async () => {
     const cases = [
       [smtpError(550), 'failed'],
       [smtpError(421), 'scheduled'],
