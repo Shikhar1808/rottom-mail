@@ -2,11 +2,11 @@
 import crypto from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../queues', () => ({ searchSyncQueue: { add: async () => undefined } }));
+vi.mock('../../src/lib/queues', () => ({ searchSyncQueue: { add: async () => undefined } }));
 
-import { prisma } from '../db';
-import { updateEmail } from './emails';
-import { es, searchEmailIds, syncEmails } from './search';
+import { prisma } from '../../src/lib/db';
+import { updateEmail } from '../../src/services/emails';
+import { es, searchEmailIds, syncEmails } from '../../src/services/search';
 
 const tag = () => crypto.randomBytes(6).toString('hex'); // one searchable word per lead
 const users = [crypto.randomUUID(), crypto.randomUUID()];

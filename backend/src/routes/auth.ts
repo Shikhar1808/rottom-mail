@@ -1,11 +1,10 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
-import { devLogin, env } from '../config';
-import { prisma } from '../db';
+import { devLogin, env } from '../config/env';
+import { prisma } from '../lib/db';
 import { audit } from '../services/emails';
-import { cookieName, cookieOpts, createSession, destroySession, SID } from '../session';
-import { redis } from '../redis';
+import { cookieName, cookieOpts, createSession, destroySession, sessionUser } from '../services/session';
 
 export const authRouter = Router();
 
@@ -67,8 +66,7 @@ authRouter.get('/dev', async (_req, res) => {
 });
 
 authRouter.post('/logout', async (req, res) => {
-  const sid = req.cookies?.[SID];
-  const userId = sid ? await redis.get(`sess:${sid}`) : null;
+  const userId = await sessionUser(req);
   await destroySession(req, res);
   if (userId) await audit({ userId, type: 'logout', actor: `user:${userId}` });
   res.json({ ok: true });

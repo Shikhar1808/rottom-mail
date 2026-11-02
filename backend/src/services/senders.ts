@@ -1,9 +1,10 @@
 import nodemailer from 'nodemailer';
-import { env } from '../config';
-import { encrypt } from '../crypto';
-import { prisma } from '../db';
-import { HttpError, sleep } from '../http';
-import { redis } from '../redis';
+import { env } from '../config/env';
+import { encrypt } from '../utils/crypto';
+import { prisma } from '../lib/db';
+import { HttpError } from '../utils/errors';
+import { sleep } from '../utils/helpers';
+import { redis } from '../lib/redis';
 import { audit } from './emails';
 
 // Never select the encrypted password into API responses.

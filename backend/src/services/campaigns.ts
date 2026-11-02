@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { env } from '../config';
-import { prisma } from '../db';
-import { chunk, HttpError } from '../http';
-import { searchSyncQueue } from '../queues';
+import { env } from '../config/env';
+import { prisma } from '../lib/db';
+import { HttpError } from '../utils/errors';
+import { chunk } from '../utils/helpers';
+import { searchSyncQueue } from '../lib/queues';
 import { planSendTimes } from './plan';
 import { enqueueEmails } from './scheduler';
 

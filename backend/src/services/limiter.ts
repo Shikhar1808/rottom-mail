@@ -1,7 +1,7 @@
 import { DelayedError, type Job, RateLimitError } from 'bullmq';
-import { env } from '../config';
-import { emailQueue, type EmailJob, notificationsQueue } from '../queues';
-import { redis } from '../redis';
+import { env } from '../config/env';
+import { emailQueue, type EmailJob, notificationsQueue } from '../lib/queues';
+import { redis } from '../lib/redis';
 import { audit, type Ev, updateEmail } from './emails';
 type GateEmail = { id: string; userId: string; senderId: string; campaignId: string };
 

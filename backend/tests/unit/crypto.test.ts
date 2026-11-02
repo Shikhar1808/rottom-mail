@@ -1,13 +1,13 @@
 import crypto from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-let mod: typeof import('./crypto');
+let mod: typeof import('../../src/utils/crypto');
 
 beforeAll(async () => {
   process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
   process.env.DATABASE_URL ??= 'postgresql://unused';
   process.env.APP_URL ??= 'https://localhost:5173';
-  mod = await import('./crypto');
+  mod = await import('../../src/utils/crypto');
 });
 
 describe('encrypt / decrypt', () => {

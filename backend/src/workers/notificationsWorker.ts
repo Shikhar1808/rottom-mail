@@ -1,7 +1,7 @@
 import { type Job, UnrecoverableError } from 'bullmq';
-import { decrypt } from '../crypto';
-import { prisma } from '../db';
-import type { NotificationJob } from '../queues';
+import { decrypt } from '../utils/crypto';
+import { prisma } from '../lib/db';
+import type { NotificationJob } from '../lib/queues';
 import { audit } from '../services/emails';
 import { connectedMessage, limitMessage, PERMANENT_SLACK_ERRORS } from '../services/slack';
 

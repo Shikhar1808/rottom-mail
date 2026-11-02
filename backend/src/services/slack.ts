@@ -1,4 +1,4 @@
-import { env } from '../config';
+import { env } from '../config/env';
 
 // Errors after which this webhook will never work again (docs/06). Classified by Slack's error string, not HTTP status.
 export const PERMANENT_SLACK_ERRORS = new Set([

@@ -1,6 +1,6 @@
 import type { Job } from 'bullmq';
-import { prisma } from '../db';
-import type { SearchSyncJob } from '../queues';
+import { prisma } from '../lib/db';
+import type { SearchSyncJob } from '../lib/queues';
 import { syncEmails } from '../services/search';
 
 // One email (after each change), a whole campaign (after scheduling) or a batch (startup repair).

@@ -4,12 +4,12 @@
   "version": "0.1.0",
   "scripts": {
     "dev:api": "tsx watch src/server.ts",
-    "dev:worker": "tsx watch src/worker.ts",
+    "dev:worker": "tsx watch src/workers/index.ts",
     "dev:session": "tsx src/scripts/dev-session.ts",
     "dev:slack-webhook": "tsx src/scripts/dev-slack-webhook.ts",
     "build": "eslint src && tsc",
     "start:api": "node dist/server.js",
-    "start:worker": "node dist/worker.js",
+    "start:worker": "node dist/workers/index.js",
     "lint": "eslint src",
     "test": "vitest run",
     "db:migrate": "prisma migrate dev"

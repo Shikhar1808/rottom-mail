@@ -1,7 +1,7 @@
 import { createApp } from './app';
-import { env } from './config';
-import { prisma } from './db';
-import { redis } from './redis';
+import { env } from './config/env';
+import { prisma } from './lib/db';
+import { redis } from './lib/redis';
 import { repairQueues } from './services/scheduler';
 import { ensureIndex } from './services/search';
 

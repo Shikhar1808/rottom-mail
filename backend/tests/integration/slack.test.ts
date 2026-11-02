@@ -7,11 +7,11 @@ vi.hoisted(() => {
   process.env.RATE_LIMIT_WINDOW_MS = '60000'; // the demo window, so the message says "per minute"
 });
 
-import { encrypt } from '../crypto';
-import { prisma } from '../db';
-import type { NotificationJob } from '../queues';
-import { processNotification } from '../workers/notificationsWorker';
-import { limitMessage } from './slack';
+import { encrypt } from '../../src/utils/crypto';
+import { prisma } from '../../src/lib/db';
+import type { NotificationJob } from '../../src/lib/queues';
+import { processNotification } from '../../src/workers/notificationsWorker';
+import { limitMessage } from '../../src/services/slack';
 
 describe('limitMessage', () => {
   it('escapes user text and names the real window', () => {

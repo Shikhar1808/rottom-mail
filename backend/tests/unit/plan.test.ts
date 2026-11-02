@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSendTimes } from './plan';
+import { planSendTimes } from '../../src/services/plan';
 
 describe('planSendTimes', () => {
   it('spaces by delay and starts a new window once the hourly limit is used', () => {

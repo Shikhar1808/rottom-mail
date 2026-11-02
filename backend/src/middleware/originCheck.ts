@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { env } from '../config';
+import { env } from '../config/env';
 
 const appOrigin = new URL(env.APP_URL).origin;
 

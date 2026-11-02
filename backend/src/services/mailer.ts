@@ -1,7 +1,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { Sender } from '@prisma/client';
-import { env } from '../config';
-import { decrypt } from '../crypto';
+import { env } from '../config/env';
+import { decrypt } from '../utils/crypto';
 
 const pools = new Map<string, Transporter>();
 let fake: Transporter | undefined;

@@ -1,6 +1,6 @@
 import type { EmailStatus, Prisma } from '@prisma/client';
-import { prisma } from '../db';
-import { searchSyncQueue } from '../queues';
+import { prisma } from '../lib/db';
+import { searchSyncQueue } from '../lib/queues';
 
 export type AuditInput = {
   userId: string;

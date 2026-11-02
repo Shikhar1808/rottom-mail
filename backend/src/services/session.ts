@@ -1,13 +1,7 @@
 import crypto from 'node:crypto';
-import type { CookieOptions, NextFunction, Request, Response } from 'express';
-import { isHttps } from './config';
-import { redis } from './redis';
-
-declare module 'express-serve-static-core' {
-  interface Request {
-    userId?: string;
-  }
-}
+import type { CookieOptions, Request, Response } from 'express';
+import { isHttps } from '../config/env';
+import { redis } from '../lib/redis';
 
 const TTL_SECONDS = 7 * 24 * 3600;
 
@@ -26,19 +20,14 @@ export async function createSession(res: Response, userId: string) {
   res.cookie(SID, await newSession(userId), { ...cookieOpts, maxAge: TTL_SECONDS * 1000 });
 }
 
+/** The user id behind this request's session cookie, or null. */
+export async function sessionUser(req: Request): Promise<string | null> {
+  const sid = req.cookies?.[SID];
+  return sid ? redis.get(`sess:${sid}`) : null;
+}
+
 export async function destroySession(req: Request, res: Response) {
   const sid = req.cookies?.[SID];
   if (sid) await redis.del(`sess:${sid}`);
   res.clearCookie(SID, cookieOpts);
-}
-
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sid = req.cookies?.[SID];
-  const userId = sid ? await redis.get(`sess:${sid}`) : null;
-  if (!userId) {
-    res.status(401).json({ error: 'unauthenticated' });
-    return;
-  }
-  req.userId = userId;
-  next();
 }

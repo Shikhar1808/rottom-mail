@@ -4,17 +4,17 @@ import { ExpressAdapter } from '@bull-board/express';
 import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { devLogin } from './config';
-import { prisma } from './db';
-import { HttpError } from './http';
+import { devLogin } from './config/env';
+import { prisma } from './lib/db';
+import { HttpError } from './utils/errors';
 import { originCheck } from './middleware/originCheck';
-import { allQueues } from './queues';
+import { allQueues } from './lib/queues';
 import { authRouter } from './routes/auth';
 import { campaignsRouter } from './routes/campaigns';
 import { emailsRouter } from './routes/emails';
 import { sendersRouter } from './routes/senders';
 import { slackRouter } from './routes/slack';
-import { requireAuth } from './session';
+import { requireAuth } from './middleware/requireAuth';
 
 function bullBoard() {
   const adapter = new ExpressAdapter();

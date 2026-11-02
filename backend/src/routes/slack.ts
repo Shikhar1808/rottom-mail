@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { env } from '../config';
-import { decrypt, encrypt } from '../crypto';
-import { prisma } from '../db';
-import { notificationsQueue } from '../queues';
-import { redis } from '../redis';
+import { env } from '../config/env';
+import { decrypt, encrypt } from '../utils/crypto';
+import { prisma } from '../lib/db';
+import { notificationsQueue } from '../lib/queues';
+import { redis } from '../lib/redis';
 import { audit } from '../services/emails';
 
 export const slackRouter = Router();

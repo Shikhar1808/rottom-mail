@@ -6,24 +6,24 @@ import { type Job, Worker } from 'bullmq';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { sendMail } = vi.hoisted(() => ({ sendMail: vi.fn() }));
-vi.mock('./services/mailer', () => ({ transportFor: () => ({ sendMail }) }));
-// Rate limits have their own tests (services/limiter.test.ts); here every email may send right away.
-vi.mock('./services/limiter', async (importOriginal) => ({ ...(await importOriginal<object>()), gate: async () => undefined }));
-vi.mock('./queues', async () => {
+vi.mock('../../src/services/mailer', () => ({ transportFor: () => ({ sendMail }) }));
+// Rate limits have their own tests (limiter.test.ts); here every email may send right away.
+vi.mock('../../src/services/limiter', async (importOriginal) => ({ ...(await importOriginal<object>()), gate: async () => undefined }));
+vi.mock('../../src/lib/queues', async () => {
   const { Queue } = await import('bullmq');
-  const { redis } = await import('./redis');
+  const { redis } = await import('../../src/lib/redis');
   return {
     emailQueue: new Queue(`test-emails-${crypto.randomUUID()}`, { connection: redis }),
     searchSyncQueue: { add: async () => undefined },
   };
 });
 
-import { prisma } from './db';
-import { emailQueue, type EmailJob } from './queues';
-import { redis } from './redis';
-import { CampaignInput, scheduleCampaign } from './services/campaigns';
-import { repairQueues } from './services/scheduler';
-import { processEmail } from './workers/emailWorker';
+import { prisma } from '../../src/lib/db';
+import { emailQueue, type EmailJob } from '../../src/lib/queues';
+import { redis } from '../../src/lib/redis';
+import { CampaignInput, scheduleCampaign } from '../../src/services/campaigns';
+import { repairQueues } from '../../src/services/scheduler';
+import { processEmail } from '../../src/workers/emailWorker';
 
 const userId = crypto.randomUUID();
 const senderId = crypto.randomUUID();

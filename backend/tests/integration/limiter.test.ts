@@ -8,12 +8,12 @@ const WIN = vi.hoisted(() => {
   Object.assign(process.env, { RATE_LIMIT_MODE: 'global', MAX_EMAILS_PER_HOUR: '3', RATE_LIMIT_WINDOW_MS: '86399999' });
   return 86_399_999;
 });
-vi.mock('../queues', () => ({ emailQueue: { rateLimit: vi.fn() }, notificationsQueue: { add: vi.fn() } }));
-vi.mock('./emails', () => ({ audit: vi.fn(), updateEmail: vi.fn() }));
+vi.mock('../../src/lib/queues', () => ({ emailQueue: { rateLimit: vi.fn() }, notificationsQueue: { add: vi.fn() } }));
+vi.mock('../../src/services/emails', () => ({ audit: vi.fn(), updateEmail: vi.fn() }));
 
-import { emailQueue, type EmailJob, notificationsQueue } from '../queues';
-import { redis } from '../redis';
-import { gate, reserveSlot } from './limiter';
+import { emailQueue, type EmailJob, notificationsQueue } from '../../src/lib/queues';
+import { redis } from '../../src/lib/redis';
+import { gate, reserveSlot } from '../../src/services/limiter';
 
 afterAll(() => redis.quit());
 

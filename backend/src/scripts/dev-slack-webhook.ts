@@ -1,11 +1,11 @@
 // Dev only: saves a Slack Incoming Webhook URL for a user, so alerts can be tried before the Slack OAuth app exists.
 // Get a URL in your Slack app: Incoming Webhooks → "Add New Webhook to Workspace".
 // Usage: npm run dev:slack-webhook <https://hooks.slack.com/...> [user email, default dev@example.com]
-import { env } from '../config';
-import { encrypt } from '../crypto';
-import { prisma } from '../db';
-import { notificationsQueue } from '../queues';
-import { redis } from '../redis';
+import { env } from '../config/env';
+import { encrypt } from '../utils/crypto';
+import { prisma } from '../lib/db';
+import { notificationsQueue } from '../lib/queues';
+import { redis } from '../lib/redis';
 import { audit } from '../services/emails';
 
 async function main() {

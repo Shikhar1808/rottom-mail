@@ -1,11 +1,12 @@
+// Worker process entry (npm run dev:worker): runs the queues listed in WORKER_QUEUES.
 import { type Processor, Worker } from 'bullmq';
-import { env } from './config';
-import { prisma } from './db';
-import { redis } from './redis';
-import { closeTransports } from './services/mailer';
-import { processEmail } from './workers/emailWorker';
-import { processNotification } from './workers/notificationsWorker';
-import { processSearchSync } from './workers/searchSyncWorker';
+import { env } from '../config/env';
+import { prisma } from '../lib/db';
+import { redis } from '../lib/redis';
+import { closeTransports } from '../services/mailer';
+import { processEmail } from './emailWorker';
+import { processNotification } from './notificationsWorker';
+import { processSearchSync } from './searchSyncWorker';
 
 const processors: Record<string, Processor> = {
   emails: processEmail,

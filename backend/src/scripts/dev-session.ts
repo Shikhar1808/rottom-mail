@@ -1,8 +1,8 @@
 // Dev only: creates a test user + session so the API can be tried with curl before Google login is wired up.
-import { env } from '../config';
-import { prisma } from '../db';
-import { redis } from '../redis';
-import { newSession, SID } from '../session';
+import { env } from '../config/env';
+import { prisma } from '../lib/db';
+import { redis } from '../lib/redis';
+import { newSession, SID } from '../services/session';
 
 async function main() {
   if (env.NODE_ENV === 'production') throw new Error('dev-session is disabled in production');

@@ -1,8 +1,8 @@
 import { Client } from '@elastic/elasticsearch';
 import type { EmailStatus } from '@prisma/client';
-import { env } from '../config';
-import { prisma } from '../db';
-import { chunk } from '../http';
+import { env } from '../config/env';
+import { prisma } from '../lib/db';
+import { chunk } from '../utils/helpers';
 
 // Fail fast: the sync worker already retries through BullMQ, and a search box shouldn't hang for seconds when ES is down.
 export const es = new Client({ node: env.ELASTICSEARCH_URL, maxRetries: 1, requestTimeout: 5000 });

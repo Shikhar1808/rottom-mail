@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { EmailStatus, type Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { prisma } from '../db';
-import { HttpError } from '../http';
-import { emailQueue } from '../queues';
+import { prisma } from '../lib/db';
+import { HttpError } from '../utils/errors';
+import { emailQueue } from '../lib/queues';
 import { updateEmail } from '../services/emails';
 import { searchEmailIds } from '../services/search';
 

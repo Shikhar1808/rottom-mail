@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import { prisma } from '../db';
-import { chunk } from '../http';
-import { emailQueue, searchSyncQueue } from '../queues';
-import { redis } from '../redis';
+import { prisma } from '../lib/db';
+import { chunk } from '../utils/helpers';
+import { emailQueue, searchSyncQueue } from '../lib/queues';
+import { redis } from '../lib/redis';
 import { audit } from './emails';
 
 type Due = { id: string; scheduledAt: Date };

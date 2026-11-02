@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { env } from './config';
+import { env } from '../config/env';
 
 const key = () => Buffer.from(env.ENCRYPTION_KEY, 'base64');
 
