@@ -17,7 +17,7 @@ Every decision made during the design discussion. Each one records the options w
 | D9 | Senders | Ethereal mailboxes auto-created per user (option B) | ✅ |
 | D10 | Rate limiting | Two implementations: global and per-sender (`RATE_LIMIT_MODE`) | ✅ |
 | D11 | Per-sender waiting | Book a slot and step aside, never sleep | ✅ |
-| D12 | SMTP replies | 4xx means try later, 5xx means failed | ✅ |
+| D12 | SMTP replies | 4xx means try later, 5xx means failed, no reply means needs check | ✅ |
 | D13 | Scheduling | BullMQ delayed jobs, `jobId = email.id` | ✅ |
 | D14 | Persistence | Postgres as truth, Redis AOF + `noeviction`, startup repair | ✅ |
 | D15 | Delivery guarantee | At-most-once + Option C (check, then resend) | ✅ |
@@ -128,6 +128,7 @@ Every decision made during the design discussion. Each one records the options w
 
 ### D12 · SMTP replies: 4xx later, 5xx failed ✅
 - **Why:** Ethereal public accounts reject mail above **200 messages/hour** until the next hour. Under standard SMTP rules, 4xx means temporary, so those jobs move to the next window (audit `smtp_deferred`) instead of burning retries. 5xx means permanent, so the email is `failed`.
+- **No reply at all** (connection dropped or timed out): the server may already have the message, so the email becomes `needs_check` instead of being resent (at-most-once, D15).
 - **Also:** keep `MAX_EMAILS_PER_HOUR_PER_SENDER ≤ 200`.
 
 ### D13 · Scheduling: BullMQ delayed jobs ✅
@@ -151,7 +152,7 @@ Every decision made during the design discussion. Each one records the options w
   - **Not found:** send it.
   - **Check fails:** mark it `needs_check`. The user can click Retry send.
 - **Why:** a duplicate cold email is worse than a missed one, and the check removes the ambiguity in most cases.
-- **Remaining risk:** a worker that is frozen but still alive could finish its send while the check runs. That's rare, and documented.
+- **Remaining risk:** a worker that is frozen but still alive could finish its send while the check runs. That's rare, and documented. If it does, its `sent` result still lands (that write also accepts `needs_check`), so the only gap left is a user clicking Retry send before then.
 
 ### D16 · Failure handling and NACK/DLQ ✅
 - **Known failure** (SMTP error): retry with backoff, then the BullMQ `failed` set (that's the DLQ), and the row becomes `failed`.

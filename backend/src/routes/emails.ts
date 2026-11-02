@@ -53,7 +53,7 @@ emailsRouter.post('/:id/retry', async (req, res) => {
   const ok = await updateEmail(
     email.id,
     { status: 'scheduled', scheduledAt: new Date(), error: null },
-    { userId: email.userId, campaignId: email.campaignId, type: 'retry_requested', actor: `user:${req.userId}` },
+    { userId: email.userId, campaignId: email.campaignId, type: 'retry_requested', actor: `user:${req.userId}`, fromStatus: email.status },
     ['needs_check', 'failed'],
   );
   if (!ok) throw new HttpError(409, 'Only failed or needs-check emails can be retried');

@@ -44,6 +44,14 @@ export async function repairQueues() {
         ...(cursor && { cursor: { id: cursor }, skip: 1 }),
       });
       if (!batch.length) break;
+      // A row can still be "scheduled" after its job gave up (e.g. Postgres was down for every try). BullMQ ignores
+      // re-adding an id that exists, so drop finished jobs first. The atomic claim still stops a double send.
+      await Promise.all(
+        batch.map(async (r) => {
+          const state = await emailQueue.getJobState(r.id);
+          if (state === 'failed' || state === 'completed') await emailQueue.remove(r.id);
+        }),
+      );
       await enqueueEmails(batch);
       total += batch.length;
       cursor = batch[batch.length - 1].id;

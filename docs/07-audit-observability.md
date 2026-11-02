@@ -89,7 +89,7 @@ It's served on the same domain (`https://rottom.your-domain.com/admin/queues`, t
 | Waiting | due, waiting for a free worker. In global mode this grows while the queue is paused |
 | Active | being sent right now |
 | Completed | sent (kept 24h / last 1000) |
-| Failed | gave up after 3 tries (the DLQ) |
+| Failed | gave up after 8 tries, a permanent SMTP error, or parked as needs check (the DLQ) |
 
 | | Who | What | Source |
 |---|---|---|---|

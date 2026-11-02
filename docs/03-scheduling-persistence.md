@@ -11,7 +11,7 @@ How emails get scheduled, why they survive crashes, why none is sent twice, and 
    { name: 'send', data: { emailId }, opts: {
        jobId: email.id,                                  // duplicates are ignored by BullMQ
        delay: scheduledAt - Date.now(),                  // the time lives in Redis, not in Node
-       attempts: 3, backoff: { type: 'exponential', delay: 5000 },
+       attempts: 8, backoff: { type: 'exponential', delay: 5000 },  // ≈ 10 min: outlasts a short DB restart
        removeOnComplete: { age: 86400, count: 1000 },    // keep recent ones for Bull Board
        removeOnFail: { age: 7 * 86400 },
    } }
@@ -26,7 +26,7 @@ There are **no `setTimeout` timers and nothing scheduled in Node's memory.** A d
 |---|---|---|
 | **Postgres** | Every email row and its status: the truth | Committed before anything is queued. The write-ahead log makes commits durable |
 | **Redis (BullMQ)** | The timers (delayed jobs), rate-limit state, sessions | `appendonly yes`, `appendfsync everysec` (lose at most ~1s), a Docker volume, and `maxmemory-policy noeviction` so Redis never quietly drops job keys (BullMQ requires this) |
-| **Startup repair** | Rebuilds Redis from Postgres | On boot, one instance (Redis lock `SET repair_lock NX EX 300`) re-queues every `scheduled` row in batches with the same `jobId` (existing jobs are ignored, missing ones come back) and queues sync for rows where `indexedVersion < version` |
+| **Startup repair** | Rebuilds Redis from Postgres | On boot, one instance (Redis lock `SET repair_lock NX EX 300`) re-queues every `scheduled` row in batches with the same `jobId` (existing jobs are ignored, missing ones come back, and a job that already gave up on a still-`scheduled` row is replaced) and queues sync for rows where `indexedVersion < version` |
 
 ```yaml
 # docker-compose.yml (excerpt)
@@ -41,6 +41,7 @@ redis:
 | Guard | What it stops |
 |---|---|
 | `jobId = email.id` | The same email being queued twice (the API, repair, and retries all use it) |
+| `campaignId` made by the Compose form | The same form submitted twice (double-click, resend after an error) creating a second campaign. The insert is `ON CONFLICT DO NOTHING` |
 | Status check at job start | Re-processing rows that are already `sent` / `failed` |
 | **Atomic claim**: `UPDATE email SET status='sending', claimedAt=now() WHERE id=? AND status='scheduled'` | Two workers sending the same email. Only one gets `count = 1` |
 | Option C check (below) | Resending something that actually went out before a crash |
@@ -57,7 +58,7 @@ redis:
 | Worker, after the SMTP send, before marking `sent` | Row is still `sending`. The retry runs the Option C check, finds the Message-ID, marks `sent`. **No duplicate** |
 | Worker, after the claim, before the SMTP send | Row is still `sending`. The check finds nothing, so it sends. **Not lost** |
 | Redis | AOF loses at most ~1s. Startup repair restores any missing jobs from Postgres. Rate-limit counters for the current window may reset (a few extra sends possible that hour) |
-| Postgres | Data is safe. Claims fail, so jobs retry with backoff until the DB is back |
+| Postgres | Data is safe. Jobs retry with backoff for about 10 minutes (8 tries). If the outage lasts longer, rows stay `scheduled` and startup repair replaces their dead jobs |
 | Whole machine | Both stores are on Docker volumes. Same as above |
 | Rate-limited emails | Per-sender: normal delayed jobs, with the new time also stored in the DB. Global: the pause key lives in Redis with a TTL, so the pause survives too |
 
@@ -82,14 +83,14 @@ flowchart TD
 - The check runs inside BullMQ's own stalled-job retry, so no sweeper is needed.
 - **"Needs check"** rows show an amber badge. `POST /api/emails/:id/retry` re-queues them with a new job ID (`<id>-retry-<n>`), and the click is audited as `retry_requested`.
 - The same approach works in production with Gmail's API (`rfc822msgid:` search) or with delivery webhooks from email services.
-- **Remaining risk:** a worker that is frozen but not dead (longer than its lock) could finish sending while the check runs. Rare and documented.
+- **Remaining risk:** a worker that is frozen but not dead (longer than its lock) could finish sending while the check runs. Rare and documented. If it does, its `sent` result still lands (that write also accepts `needs_check`), so the only gap left is a user clicking Retry send before then.
 
 ## Failure handling vs NACK and DLQ
 
 | Concept | RabbitMQ / SQS | BullMQ | Here |
 |---|---|---|---|
 | Ack | `basic.ack` / `DeleteMessage` | processor returns | row becomes `sent` |
-| NACK + requeue | `basic.nack(requeue)` | processor throws, retried with backoff | SMTP error: row back to `scheduled`, retry |
+| NACK + requeue | `basic.nack(requeue)` | processor throws, retried with backoff | SMTP 4xx: row back to `scheduled`, retry. No SMTP reply: `needs_check`, never a blind resend |
 | Redelivery after the consumer dies | unacked messages requeued / visibility timeout | **stalled job** check | crash mid-send: Option C check |
 | DLQ | dead-letter exchange / `maxReceiveCount` | the **`failed` set** (after attempts or `maxStalledCount`) | row `failed`, or `needs_check` for unclear cases |
 | "Not now" | delayed requeue / `ChangeMessageVisibility` | `DelayedError` / `RateLimitError` (no attempt used) | rate limit / SMTP 4xx: moved to the next window |

@@ -8,6 +8,7 @@ import { planSendTimes } from './plan';
 import { enqueueEmails } from './scheduler';
 
 export const CampaignInput = z.object({
+  campaignId: z.uuid(), // made once by the Compose form, so submitting the same form twice creates one campaign
   senderId: z.uuid(),
   subject: z.string().trim().min(1).max(200),
   body: z.string().trim().min(1).max(50_000),
@@ -28,7 +29,7 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
 
   const leads = [...new Set(input.leads)];
   const times = planSendTimes(leads.length, startAt, input.delayMs, input.hourlyLimit, env.RATE_LIMIT_WINDOW_MS);
-  const campaignId = crypto.randomUUID();
+  const { campaignId } = input;
   const actor = `user:${userId}`;
   const rows = leads.map((toEmail, i) => ({
     id: crypto.randomUUID(),
@@ -40,20 +41,25 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
   }));
 
   // Rows first, in one transaction: nothing is half-saved, and the queue can always be rebuilt from them.
-  await prisma.$transaction(
+  const created = await prisma.$transaction(
     async (tx) => {
-      await tx.campaign.create({
-        data: {
-          id: campaignId,
-          userId,
-          senderId: sender.id,
-          subject: input.subject,
-          body: input.body,
-          startAt: new Date(startAt),
-          delayMs: input.delayMs,
-          hourlyLimit: input.hourlyLimit,
-        },
+      // ON CONFLICT DO NOTHING: a second submit (double-click, resend after an error) waits for the first, then adds nothing.
+      const { count } = await tx.campaign.createMany({
+        data: [
+          {
+            id: campaignId,
+            userId,
+            senderId: sender.id,
+            subject: input.subject,
+            body: input.body,
+            startAt: new Date(startAt),
+            delayMs: input.delayMs,
+            hourlyLimit: input.hourlyLimit,
+          },
+        ],
+        skipDuplicates: true,
       });
+      if (count === 0) return false;
       for (const part of chunk(rows, 1000)) {
         await tx.email.createMany({ data: part });
         await tx.auditEvent.createMany({
@@ -77,9 +83,23 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
           data: { leads: rows.length, senderId: sender.id, startAt: new Date(startAt).toISOString(), delayMs: input.delayMs, hourlyLimit: input.hourlyLimit },
         },
       });
+      return true;
     },
     { timeout: 60_000 },
   );
+
+  if (!created) {
+    // Answer with what the first submit created. Another user's campaign id matches no rows.
+    const agg = await prisma.email.aggregate({
+      where: { campaignId, userId },
+      _count: true,
+      _min: { scheduledAt: true },
+      _max: { scheduledAt: true },
+    });
+    if (!agg._count) throw new HttpError(409, 'Campaign id already used');
+    const { _count: count, _min, _max } = agg;
+    return { campaignId, count, duplicatesRemoved: input.leads.length - count, firstSendAt: _min.scheduledAt, lastSendAt: _max.scheduledAt };
+  }
 
   await enqueueEmails(rows);
   await searchSyncQueue.add('campaign', { campaignId }, { jobId: `campaign-${campaignId}` });

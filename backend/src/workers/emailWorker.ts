@@ -51,12 +51,10 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
 
   // If this write fails the row stays "sending": the retry goes through recoverAfterCrash, never a blind resend.
   const previewUrl = nodemailer.getTestMessageUrl(info as SMTPTransport.SentMessageInfo) || null;
-  await updateEmail(
-    email.id,
-    { status: 'sent', sentAt: new Date(), messageId: info.messageId, previewUrl, error: null },
-    ev('sent', { smtpResponse: info.response ?? 'fake transport', messageId: info.messageId, previewUrl }),
-    ['sending'],
-  );
+  const sent = { status: 'sent' as const, sentAt: new Date(), messageId: info.messageId, previewUrl, error: null };
+  const event = ev('sent', { smtpResponse: info.response ?? 'fake transport', messageId: info.messageId, previewUrl });
+  // A slow send may have been parked as needs_check by another copy of this job. It did go out, so record it.
+  if (!(await updateEmail(email.id, sent, event, ['sending']))) await updateEmail(email.id, sent, event, ['needs_check']);
 }
 
 async function handleSendError(job: Job<EmailJob>, email: LoadedEmail, err: SmtpError, ev: (t: string, d?: Prisma.InputJsonValue) => AuditInput) {
@@ -75,11 +73,16 @@ async function handleSendError(job: Job<EmailJob>, email: LoadedEmail, err: Smtp
     await fail(error); // permanent SMTP rejection
     throw new UnrecoverableError(error);
   }
+  if (!code) {
+    // No SMTP reply: the connection may have dropped after the server took the message, so a resend could duplicate it.
+    await updateEmail(email.id, { status: 'needs_check', error }, ev('needs_check', { reason: 'no SMTP reply', error, code: err.code ?? null }), ['sending']);
+    throw new UnrecoverableError(error);
+  }
   if (job.attemptsMade + 1 >= (job.opts.attempts ?? 1)) {
     await fail(error); // out of retries: lands in BullMQ's failed set (the DLQ)
     throw err;
   }
-  await updateEmail(email.id, { status: 'scheduled', error }, ev('send_failed', { error, code: code ?? err.code ?? null, willRetry: true }), ['sending']);
+  await updateEmail(email.id, { status: 'scheduled', error }, ev('send_failed', { error, code, willRetry: true }), ['sending']);
   throw err; // BullMQ retries with exponential backoff
 }
 

@@ -205,7 +205,7 @@ Dashboard tabs: **Scheduled** shows `scheduled` and `sending`. **Sent** shows `s
 | GET | `/api/me` | session | Name, email, avatar for the header |
 | GET | `/api/senders` | session | List the user's senders. Creates 2 Ethereal mailboxes if they have none ([08](./08-senders-ethereal.md)) |
 | POST | `/api/senders` | session | "Add sender" (cap 5 per user) |
-| POST | `/api/campaigns` | session | Schedule: `{ senderId, subject, body, leads[], startAt, delayMs, hourlyLimit }` |
+| POST | `/api/campaigns` | session | Schedule: `{ campaignId, senderId, subject, body, leads[], startAt, delayMs, hourlyLimit }`. The form makes `campaignId` once, so submitting it twice creates one campaign |
 | GET | `/api/emails?tab=scheduled\|sent&cursor=` | session | Tabs, read from **Postgres**, cursor pagination |
 | GET | `/api/emails/search?q=&status=` | session | **ES finds the IDs, Postgres shows the rows** ([05](./05-search-elasticsearch.md)) |
 | GET | `/api/emails/:id/events` | session | Audit timeline for one email |
@@ -246,7 +246,7 @@ Every state-changing request (POST/PUT/DELETE) must carry `Origin: APP_URL` and 
             Message-ID: <email.id@reachinbox.local> → "250 Accepted" (caught, not delivered)
 
 ⑦ RECORD    ONE transaction: status sent, sentAt, messageId, previewUrl + audit "sent" (SMTP reply)
-            → search-sync job → ES. Errors: 4xx → next window; 5xx / 3 failures → failed
+            → search-sync job → ES. Errors: 4xx → next window; 5xx / 8 failures → failed; no SMTP reply → needs_check
 
 ⑧ SEE IT    Sent tab (Postgres), history timeline, Ethereal preview link
 ```

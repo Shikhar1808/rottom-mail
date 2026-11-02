@@ -38,6 +38,7 @@
 **Block C: first check (1h)**
 - [x] P0 Schedule 5 emails 1 min ahead via curl (`npm run dev:session` cookie). All sent through Ethereal with preview links; duplicate lead merged; audit trail scheduled → claimed → sent
 - [x] P0 Restart test: scheduled +2 min, killed API + worker, restarted Redis (3 delayed jobs survived), restarted API (repair) + 2 workers. Each sent exactly once
+- [x] P1 Review fixes: 8 tries + repair replaces dead jobs, no SMTP reply → `needs_check`, late `sent` still recorded, `campaignId` from the form (resubmit-safe). `src/delivery.test.ts` covers the race, SMTP replies, late sent, repair and double submit
 
 ## Day 2 (Tue 11-03, morning): limits, auth, Slack, search (~6h)
 
@@ -72,7 +73,7 @@
 - [ ] P0 Login page (Continue with Google, error toasts)
 - [ ] P0 Header: avatar (no-referrer, initials fallback), name, email, logout
 - [ ] P0 Dashboard: Scheduled / Sent tabs, shared `EmailTable`, loading + empty states, 5s polling
-- [ ] P0 Compose: From dropdown, subject, body, CSV/txt upload → `extractEmails` count, start time, delay, hourly limit, Schedule
+- [ ] P0 Compose (makes `campaignId = crypto.randomUUID()` when opened, a new one after each Schedule): From dropdown, subject, body, CSV/txt upload → `extractEmails` count, start time, delay, hourly limit, Schedule
 - [ ] P0 Slack button (connect / connected / reconnect) + `?slack=` toasts
 - [ ] P0 Search bar → results table
 - [ ] P1 "Needs check" badge + Retry send button
@@ -83,7 +84,7 @@
 
 - [ ] P1 Option C crash check: IMAP Message-ID search in the stalled path, `needs_check` fallback
 - [ ] P1 `SMTP_MODE=fake` + load script (1000 leads), run both modes, record numbers
-- [ ] P1 vitest: `extractEmails`, same job twice sends once
+- [ ] P1 vitest: `extractEmails` (same job twice sends once: done in `src/delivery.test.ts`)
 - [ ] P0 README: check every run command against the real code, fill in the measured numbers, link the video
 - [ ] P0 Record the demo video (script below)
 - [ ] P0 Submit (checklist below)

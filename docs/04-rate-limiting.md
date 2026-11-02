@@ -158,7 +158,7 @@ Ethereal limits public accounts to **200 messages/hour** (then rejects until the
 | `4xx` (e.g. Ethereal's 200/hr rejection) | temporary | Move to the next window, audit `smtp_deferred`, **don't** use up attempts |
 | `5xx` | permanent | `failed` |
 | `535` auth failure | sender's Ethereal account broken | Sender becomes `broken`, email `failed` with reason, user is told |
-| network / timeout | unknown | Back to `scheduled`, BullMQ retry with backoff |
+| network / timeout (no reply) | unknown: the server may already have it | `needs_check`, no automatic resend. The Option C check ([03](./03-scheduling-persistence.md#delivery-guarantee-at-most-once--option-c)) will settle these |
 
 ## Demo and test settings
 

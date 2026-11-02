@@ -11,7 +11,10 @@ const defaults: DefaultJobOptions = {
   removeOnFail: { age: 7 * 86_400 },
 };
 
-export const emailQueue = new Queue<EmailJob>('emails', { connection: redis, defaultJobOptions: defaults });
+export const emailQueue = new Queue<EmailJob>('emails', {
+  connection: redis,
+  defaultJobOptions: { ...defaults, attempts: 8 }, // 5s doubling ≈ 10 min of retries: outlasts a short Postgres restart
+});
 export const searchSyncQueue = new Queue<SearchSyncJob>('search-sync', {
   connection: redis,
   defaultJobOptions: { ...defaults, attempts: 10 },
