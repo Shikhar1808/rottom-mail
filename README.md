@@ -43,8 +43,8 @@ Full detail: [architecture](./docs/01-architecture.md) · [decisions](./docs/02-
 | Slack alert on limit hit (real OAuth, live) | `incoming-webhook` OAuth, `notifications` queue | [06](./docs/06-auth-slack.md#slack-connect) | ⬜ |
 | Behaviour with 1000+ emails | Book a slot and step aside, overflow by window, `SMTP_MODE=fake` load test | [09](./docs/09-scaling-impacts.md) | ⬜ |
 | Google login (real), header with name/email/avatar, logout | Backend OAuth (state + PKCE), Redis sessions | [06](./docs/06-auth-slack.md#google-login) | ⬜ |
-| Dashboard: Scheduled / Sent tabs, Compose button | Shared `EmailTable`, loading + empty states | [01](./docs/01-architecture.md#planned-folder-layout) | ⬜ |
-| Compose: subject, body, CSV upload with count, start time, delay, hourly limit | `extractEmails` (regex + dedupe) | [01](./docs/01-architecture.md#end-to-end-flow-gmail-login--email-sent) | ⬜ |
+| Dashboard: Scheduled / Sent tabs, Compose button | The Figma layout (D27): sidebar with counts, inbox rows with a time pill, an email page with its history. Loading + empty states | [01](./docs/01-architecture.md#planned-folder-layout) | ⬜ |
+| Compose: subject, body, CSV upload with count, start time, delay, hourly limit | "Upload List" or typed addresses as chips, "Send Later" menu, a formatting toolbar (bold, italic, links, lists…) and up to 3 attachments (D28), `extractEmails` (regex + dedupe) | [01](./docs/01-architecture.md#end-to-end-flow-gmail-login--email-sent) | ⬜ |
 | Clean frontend code (reusable UI, types, toasts) | UI kit + typed API client + TanStack Query | [01](./docs/01-architecture.md#planned-folder-layout) | ⬜ |
 
 **Beyond the brief:** append-only audit trail with a per-email timeline, crash check (Option C) + "Needs check" / Retry send, two limiter implementations to compare, SMTP 4xx/5xx handling, encrypted secrets.

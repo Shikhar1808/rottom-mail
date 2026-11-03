@@ -11,7 +11,7 @@
 
 ## Blockers (do first, they involve waiting on other services)
 
-- [ ] **Figma link:** missing from the assignment text. Ask for it or find it, or the frontend matches the layout only roughly
+- [x] **Figma:** screens shared as screenshots on 2026-11-03; the UI follows them ([02 D27](./02-design-decisions.md#d27--ui-the-figma-plus-our-own-touch-))
 - [ ] **Google Cloud:** OAuth client (Web), redirect URIs, consent screen in Testing, test users (you + reviewers)
 - [ ] **Slack app:** create app, enable Incoming Webhooks, HTTPS redirect URLs, scope `incoming-webhook`
 - [ ] **Local HTTPS (Vite only):** `mkcert -install` + `mkcert localhost`. Check that Slack's settings accept `https://localhost:5173/api/slack/callback`. If not, use the GitHub Pages relay page ([06](./06-auth-slack.md#local-dev-and-slack))
@@ -80,7 +80,8 @@
 - [x] P0 Search bar → results table
 - [x] P1 "Needs check" badge + Retry send button
 - [x] P2 History (audit timeline) as a dialog
-- [ ] P2 Pixel-match the Figma (no Figma link yet)
+- [x] P2 Match the Figma, with our own touch (D27)
+- [x] P2 Formatted messages and attachments, demo scale (D28)
 - [x] Checked in headless Chrome at desktop and phone width: dev login → tabs → search → history → Compose with a CSV (duplicate + upper-case address merged) → 3 real Ethereal sends with preview links
 
 ## Day 2 (Tue 11-03, evening): hardening, docs, video, submit (~3h)
@@ -114,7 +115,7 @@
 ## Cut line (if behind, drop in this order)
 
 1. P2 AWS deployment and the mkcert replacement (the assignment only needs local + video)
-2. P2 Figma pixel-matching, then the history drawer
+2. ~~P2 Figma matching~~ (done)
 3. ~~P1 Option C IMAP check~~ (done)
 4. P1 load script numbers (keep `SMTP_MODE=fake` and explain the expected behaviour)
 5. P1 extra tests (keep the limiter tests)

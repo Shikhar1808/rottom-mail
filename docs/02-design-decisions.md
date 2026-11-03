@@ -32,10 +32,12 @@ Every decision made during the design discussion. Each one records the options w
 | D24 | Deployment | Single EC2 + Docker Compose + Caddy, after the local demo | 🟡 |
 | D25 | Cookie names | `__Host-` prefix when served over https | 🟡 |
 | D26 | Open to the public | Own data only, admin-only Bull Board, per-user waiting cap, privacy page | ✅ |
+| D27 | UI | The Figma's layout and green, plus our own touch: pixel ROTTOM wordmark and airmail edge | ✅ |
+| D28 | Message body | Formatted (HTML + plain text) with up to 3 attachments, 2 MB in total, at demo scale | ✅ |
 | O1 | Compose fields | Form = plan, env caps = guard (two layers) | ❓ |
 | O2 | Sender rotation | One "From" per campaign for v1 | ❓ |
 | O3 | Per-sender limit column | One env cap for v1 | ❓ |
-| O4 | Figma | Link needed before pixel-matching | ❓ |
+| O4 | Figma | Resolved: screenshots provided, see D27 | ✅ |
 
 ---
 
@@ -234,6 +236,22 @@ Every decision made during the design discussion. Each one records the options w
 - **Spam:** not a risk, because every email goes to Ethereal, which never delivers to real inboxes.
 - **Not done:** no per-IP request limit on the API, and no self-service account deletion (by request instead).
 
+### D27 · UI: the Figma, plus our own touch ✅
+- **Goal:** look like the given Figma, with something of our own. Three directions were mocked up; the user picked A.
+- **Kept from the Figma:** the login card, the sidebar (wordmark, profile card, outlined Compose, "CORE" with Scheduled / Sent and counts), the search bar with filter and refresh, inbox rows ("To:", an orange clock pill with the send time, bold subject and a grey preview), the email page, and compose (From / To / Subject rows, delay and hourly limit, a grey message box, the clock with its "Send Later" menu, "Send" / "Send Later").
+- **Our touch:** a pixel **ROTTOM** wordmark (in the place of their pixel "ONB") and the red-and-blue **airmail edge** on top of every page. The green is a shade darker than the Figma's, so white text on it and green text on white pass WCAG AA contrast. "Send Later" adds "In 1 minute" and "In 5 minutes", which suit a live demo.
+- **Left out on purpose:** email/password login (the app only signs in with Google), star, archive, delete and attachments (no such features: a button that does nothing would look broken), and the rich-text toolbar (emails go out as plain text).
+- **Added where the Figma has no place for it:** the profile card's arrow opens a menu with Slack connect / disconnect, the queue dashboard (admins only) and logout. Failed and "Needs check" rows get a Retry button. The email page shows the status, an "Open in Ethereal" link, Retry, and the email's history timeline (it replaced the History popup).
+- **API for it:** row previews, `GET /api/emails/counts`, `GET /api/emails/:id`, a `status` filter on the Sent tab, and `isAdmin` on `/api/me`.
+
+### D28 · Formatted messages and attachments ✅
+- **Asked for:** "anything Ethereal supports", at demo scale. Ethereal shows HTML email and attachments in its preview.
+- **Editor:** the Figma's toolbar works: undo / redo, text size, bold, italic, underline, strikethrough, align, lists, indent, quote and links. It uses the browser's own editing (`document.execCommand`), so there's no editor library to install. The API is marked deprecated but works in every browser (a `shortcut:` comment in `Editor.tsx`). Pasted text arrives plain, so styles from Word or web pages stay out of the emails. Links must be web or mail addresses (`javascript:` and the like are refused).
+- **Sending:** every email carries the HTML, a plain-text version (for mail apps that don't show formatting; also used for previews and search) and the attachments.
+- **Attachments:** up to **3 files, 2 MB in total**, checked in the form and again by the API. They live in Postgres (`Attachment`, `bytea`) and the worker reads them for each send. The same files go with every email and an Ethereal mailbox holds about 100 MB, so this fits a demo (2 MB × 30 leads = 60 MB), not a 200-lead campaign with full-size files.
+- **Safety in the app:** the email page shows the HTML in a sandboxed `<iframe>` without `allow-scripts`, so nothing in a message can run in the app. Checked in the browser with an `onerror` image, a `<script>` and a `javascript:` link.
+- **Not done (demo level):** pictures inside the text, fonts and colours, tables, downloading attachments from the app (Ethereal's preview has them), and a per-campaign cache of the files in the worker.
+
 ---
 
 ## Open questions
@@ -251,5 +269,5 @@ Should one campaign spread its leads round-robin across several of the user's se
 ### O3 · Limit per sender ❓
 Should each sender store its own `hourlyLimit` (real mailboxes differ: a new mailbox might do 50/hr, a warmed-up one 300/hr)? **Recommendation:** one env cap (≤ 200, Ethereal's limit) for v1.
 
-### O4 · Figma ❓
-The Figma link was missing from the assignment text. Layout work waits on it, while the components and data flow can be built first.
+### O4 · Figma ✅
+Resolved on 2026-11-03: the Figma screens were shared as screenshots (login, Scheduled, Sent, email page, compose with "Send Later"). The UI follows them: [D27](#d27--ui-the-figma-plus-our-own-touch-).

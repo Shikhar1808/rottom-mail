@@ -3,7 +3,7 @@
 | Doc | What's inside |
 |---|---|
 | [01 · Architecture](./01-architecture.md) | Components, processes, queues, data model, API, end-to-end flow, status lifecycle, folder layout |
-| [02 · Design decisions](./02-design-decisions.md) | Every decision (D1–D22) with options, why, and trade-offs. Open questions (O1–O4) |
+| [02 · Design decisions](./02-design-decisions.md) | Every decision (D1–D28) with options, why, and trade-offs. Open questions (O1–O4) |
 | [03 · Scheduling & persistence](./03-scheduling-persistence.md) | Delayed jobs, restart survival, crash scenarios, idempotency, at-most-once + crash check, NACK/DLQ, no-cron + ESLint |
 | [04 · Rate limiting](./04-rate-limiting.md) | Global vs per-sender implementations, Lua script, step-aside fix, comparison, behaviour under load, SMTP replies |
 | [05 · Search](./05-search-elasticsearch.md) | ES sync queue (outbox-style), versions, "ES finds, Postgres shows", research on GitLab / Mailgun / listmonk |

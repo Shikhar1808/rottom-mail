@@ -62,7 +62,7 @@ Day 2  rahul (new user) → Compose → his own two, separate from prithvi's
 | **Public accounts can send up to 200 messages/hour**, then Ethereal rejects more until the next hour | `MAX_EMAILS_PER_HOUR_PER_SENDER ≤ 200`. In global mode one sender can go over it, which is an argument for per-sender limiting |
 | That rejection is **temporary** | SMTP 4xx: move to the next window, not counted as a failure. 5xx: failed |
 | **Messages are kept for a few hours**, then deleted | Preview links expire, so the UI shows "preview expired". The audit `sent` event keeps the SMTP reply as lasting proof. The crash check runs within ~30s, and "not found" is only trusted for attempts under an hour old |
-| **100MB quota per address** | Fine for the demo. Big load tests use `SMTP_MODE=fake` |
+| **100MB quota per address** | Fine for the demo. Big load tests use `SMTP_MODE=fake`. Attachments go with every email, so they're capped at 2 MB per campaign ([02 D28](./02-design-decisions.md#d28--formatted-messages-and-attachments-)) |
 | Public accounts can't **receive** inbound mail | Not relevant: we only send from them |
 | How long accounts last isn't documented | `535` on login: mark the sender broken and create a new one |
 | IMAP/POP3 access is available | Used by the Option C check. Live-tested: caught messages are in **INBOX**, and `SEARCH HEADER Message-ID` finds them ([references](./references.md#ethereal)) |

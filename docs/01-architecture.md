@@ -205,9 +205,11 @@ Dashboard tabs: **Scheduled** shows `scheduled` and `sending`. **Sent** shows `s
 | GET | `/api/me` | session | Name, email, avatar for the header |
 | GET | `/api/senders` | session | List the user's senders. Creates 2 Ethereal mailboxes if they have none ([08](./08-senders-ethereal.md)) |
 | POST | `/api/senders` | session | "Add sender" (cap 5 per user) |
-| POST | `/api/campaigns` | session | Schedule: `{ campaignId, senderId, subject, body, leads[], startAt, delayMs, hourlyLimit }`. The form makes `campaignId` once, so submitting it twice creates one campaign. Refused with 429 if the user would have more than `MAX_PENDING_EMAILS_PER_USER` emails waiting |
-| GET | `/api/emails?tab=scheduled\|sent&cursor=` | session | Tabs, read from **Postgres**, cursor pagination |
+| POST | `/api/campaigns` | session | Schedule: `{ campaignId, senderId, subject, body, html?, attachments?, leads[], startAt, delayMs, hourlyLimit }`. `body` is the plain text, `html` the formatted version, `attachments` up to 3 files as base64, 2 MB in total ([02 D28](./02-design-decisions.md#d28--formatted-messages-and-attachments-)). The form makes `campaignId` once, so submitting it twice creates one campaign. Refused with 429 if the user would have more than `MAX_PENDING_EMAILS_PER_USER` emails waiting |
+| GET | `/api/emails?tab=scheduled\|sent&status=&cursor=` | session | Tabs, read from **Postgres**, cursor pagination. Each row has a `preview` (start of the message). `status` narrows the Sent tab to `sent`, `failed` or `needs_check` |
+| GET | `/api/emails/counts` | session | `{ scheduled, sent }` for the sidebar |
 | GET | `/api/emails/search?q=&status=` | session | **ES finds the IDs, Postgres shows the rows** ([05](./05-search-elasticsearch.md)) |
+| GET | `/api/emails/:id` | session | One email with its whole message (`body`, `html`) and its attachments' names and sizes, for the email page |
 | GET | `/api/emails/:id/events` | session | Audit timeline for one email |
 | POST | `/api/emails/:id/retry` | session | Retry send for `needs_check` / `failed` (new job ID, audited) |
 | GET | `/api/slack` | session | `{ status, team, channel }` (never the webhook URL) |
@@ -279,8 +281,8 @@ backend/
 frontend/
   vite.config.ts            https when the mkcert files exist; proxy /api /auth /admin → :4000 (one origin)
   src/api/                  client.ts (fetch + ApiError), types.ts, hooks.ts (TanStack Query: useMe, useEmails, useSearch...)
-  src/components/ui.tsx     Button, Field, StatusBadge, Spinner, EmptyState (dialogs are the native <dialog>)
-  src/components/           Header, SlackButton, EmailTable (both tabs + search results), HistoryDialog
-  src/lib/                  extractEmails.ts (regex + Set dedupe, CSV and txt), format.ts (times)
-  src/pages/                Login, Dashboard, Compose
+  src/components/ui.tsx     Button, IconButton, StatusPill, Avatar, Spinner, EmptyState, useDismiss (small popovers)
+  src/components/           Sidebar (profile menu, counts), EmailList (inbox rows + Retry), Editor (formatting toolbar), History, Slack, icons
+  src/lib/                  extractEmails.ts (regex + Set dedupe, CSV and txt), format.ts (times), sendLater.ts (quick picks)
+  src/pages/                Login, Dashboard, EmailView, Compose, Privacy
 ```
