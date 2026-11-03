@@ -21,8 +21,8 @@ Every bug found in the backend so far, what it could have done, and what changed
 | 13 | Mailbox check before resending (Option C) | A second copy after a crash or a Retry click | Frontend review | `6abeb00` | ✅ |
 | 14 | Bull Board for admins only | Any user seeing every other user's queue jobs | Opening to the public | `51ef6aa` | ✅ |
 | 15 | Cap on waiting emails per user | One account filling the single server | Opening to the public | `51ef6aa` | ✅ |
-| 16 | Sending a form again re-adds missing jobs | A campaign shown as scheduled that never sends | Ponytail audit | not yet committed | ✅ |
-| 17 | Request log shows the full path | Log lines like `POST /` for every campaign | Ponytail audit | not yet committed | ✅ |
+| 16 | Sending a form again re-adds missing jobs | A campaign shown as scheduled that never sends | Ponytail audit | `e86123f` | ✅ |
+| 17 | Request log shows the full path | Log lines like `POST /` for every campaign | Ponytail audit | `e86123f` | ✅ |
 
 All 37 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 
@@ -154,7 +154,7 @@ All 37 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 - **Where:** `backend/src/services/campaigns.ts` (`scheduleCampaign`), `backend/src/config/env.ts`
 - **Test:** `delivery.test.ts` › "refuses campaigns over the per-user waiting cap, even two sent at once". It failed 3 times out of 3 without the lock.
 
-## Ponytail audit (not yet committed)
+## Ponytail audit (fixed in `e86123f`)
 
 A whole-repo audit on 2026-11-03. Two bugs, plus smaller fixes.
 
