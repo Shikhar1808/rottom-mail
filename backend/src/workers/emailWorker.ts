@@ -31,6 +31,7 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
   if (email.status !== 'scheduled') return; // already sent / failed / parked: nothing to do
 
   await gate(job, token, email, ev); // rate limits: returns when it's this email's turn, else moves the job and throws
+  const attachments = await attachmentsFor(email.campaignId); // before the claim: a database error here is a plain retry
 
   // Atomic claim: of any number of workers, exactly one moves the row from scheduled to sending.
   const claimed = await updateEmail(email.id, { status: 'sending', claimedAt: new Date(), attempts: { increment: 1 } }, ev('claimed'), ['scheduled']);
@@ -46,6 +47,8 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
       to: email.toEmail,
       subject: email.campaign.subject,
       text: email.campaign.body,
+      html: email.campaign.html ?? undefined,
+      attachments,
       messageId: messageIdFor(email.id), // fixed id: lets the delivery check find it in the mailbox later
     });
   } catch (err) {
@@ -58,6 +61,12 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
   const event = ev('sent', { smtpResponse: info.response ?? 'fake transport', messageId: info.messageId, previewUrl });
   // A slow send may have been parked as needs_check by another copy of this job. It did go out, so record it.
   if (!(await updateEmail(email.id, sent, event, ['sending']))) await updateEmail(email.id, sent, event, ['needs_check']);
+}
+
+// shortcut: reads the campaign's files (2 MB at most) for every email; cache them per campaign if attachments ever get big.
+async function attachmentsFor(campaignId: string) {
+  const files = await prisma.attachment.findMany({ where: { campaignId }, select: { filename: true, contentType: true, data: true }, orderBy: { createdAt: 'asc' } });
+  return files.map((f) => ({ filename: f.filename, contentType: f.contentType, content: Buffer.from(f.data) }));
 }
 
 async function handleSendError(job: Job<EmailJob>, token: string | undefined, email: LoadedEmail, err: SmtpError, ev: Ev) {

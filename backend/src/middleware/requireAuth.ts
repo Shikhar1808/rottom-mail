@@ -14,10 +14,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   next();
 }
 
-/** After requireAuth: only users listed in ADMIN_EMAILS. The email is safe to trust: login only accepts verified Google emails. */
+// The email is safe to trust: login only accepts verified Google emails.
+export const isAdminEmail = (email: string) => env.ADMIN_EMAILS.includes(email.toLowerCase());
+
+/** After requireAuth: only users listed in ADMIN_EMAILS. */
 export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { email: true } });
-  if (!user || !env.ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+  if (!user || !isAdminEmail(user.email)) {
     res.status(403).json({ error: 'Only admins can open the queue dashboard' });
     return;
   }

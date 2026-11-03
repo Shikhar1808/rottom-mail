@@ -64,17 +64,34 @@ model Campaign {
   userId      String
   senderId    String
   subject     String
-  body        String
+  body        String // plain text: the text part of each email, previews and search
+  html        String? // the formatted version from the editor; null for plain-text campaigns
   startAt     DateTime
   delayMs     Int
   hourlyLimit Int
   createdAt   DateTime @default(now())
 
-  user   User    @relation(fields: [userId], references: [id])
-  sender Sender  @relation(fields: [senderId], references: [id])
-  emails Email[]
+  user        User         @relation(fields: [userId], references: [id])
+  sender      Sender       @relation(fields: [senderId], references: [id])
+  emails      Email[]
+  attachments Attachment[]
 
   @@index([userId, createdAt])
+}
+
+/// Files sent with every email of a campaign. Small by design (3 files, 2 MB in total), so they live in Postgres.
+model Attachment {
+  id          String   @id @default(uuid())
+  campaignId  String
+  filename    String
+  contentType String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
 }
 
 // One row per recipient. id doubles as the BullMQ jobId.

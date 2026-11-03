@@ -15,7 +15,7 @@ import { emailsRouter } from './routes/emails';
 import { sendersRouter } from './routes/senders';
 import { slackRouter } from './routes/slack';
 import { per } from './services/slack';
-import { requireAdmin, requireAuth } from './middleware/requireAuth';
+import { isAdminEmail, requireAdmin, requireAuth } from './middleware/requireAuth';
 
 function bullBoard() {
   const adapter = new ExpressAdapter();
@@ -27,7 +27,7 @@ function bullBoard() {
 
 export function createApp() {
   const app = express();
-  app.use(express.json({ limit: '2mb' })); // ~10k leads
+  app.use(express.json({ limit: '4mb' })); // ~10k leads, or 2 MB of attachments sent as base64
   app.use(cookieParser());
   app.use(originCheck);
 
@@ -38,7 +38,7 @@ export function createApp() {
   app.get('/api/me', requireAuth, async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, name: true, email: true, avatarUrl: true } });
     if (!user) throw new HttpError(401, 'unauthenticated');
-    res.json(user);
+    res.json({ ...user, isAdmin: isAdminEmail(user.email) }); // the menu shows the queue dashboard link to admins only
   });
   app.use('/auth', authRouter);
 

@@ -162,8 +162,9 @@ describe('retryEmail', () => {
 });
 
 describe('scheduleCampaign', () => {
-  const form = (leads: string[]) =>
-    CampaignInput.parse({ campaignId: crypto.randomUUID(), senderId, subject: 's', body: 'b', leads, startAt: new Date().toISOString(), delayMs: 0, hourlyLimit: 10 });
+  const raw = (leads: string[], extra: object = {}) => ({ campaignId: crypto.randomUUID(), senderId, subject: 's', body: 'b', leads, startAt: new Date().toISOString(), delayMs: 0, hourlyLimit: 10, ...extra });
+  const form = (leads: string[], extra?: object) => CampaignInput.parse(raw(leads, extra));
+  const file = (bytes: number, filename = 'f.bin') => ({ filename, contentType: 'application/octet-stream', content: Buffer.alloc(bytes, 'x').toString('base64') });
   const waiting = () => prisma.email.count({ where: { userId, status: { in: ['scheduled', 'sending'] } } });
 
   it('the same form submitted twice at once creates one campaign', async () => {
@@ -188,5 +189,24 @@ describe('scheduleCampaign', () => {
     } finally {
       env.MAX_PENDING_EMAILS_PER_USER = saved;
     }
+  });
+
+  it('sends the formatted version and the attachments with every email', async () => {
+    const input = form([`${crypto.randomUUID()}@test.local`], { html: '<p><b>Hi</b> <a href="https://example.com">there</a></p>', attachments: [file(5, 'note.txt')] });
+    await scheduleCampaign(userId, input);
+    const { id } = await prisma.email.findFirstOrThrow({ where: { campaignId: input.campaignId } });
+    sendMail.mockResolvedValue(accepted);
+    await processEmail(fakeJob(id));
+    const sent = sendMail.mock.calls.at(-1)![0];
+    expect(sent).toMatchObject({ text: 'b', html: input.html, attachments: [{ filename: 'note.txt', contentType: 'application/octet-stream' }] });
+    expect(sent.attachments[0].content.toString()).toBe('xxxxx');
+  });
+
+  it('refuses a 4th attachment or more than 2 MB in total', () => {
+    const ok = (attachments: object[]) => CampaignInput.safeParse(raw(['a@test.local'], { attachments })).success;
+    expect(ok([file(1), file(1), file(1)])).toBe(true);
+    expect(ok([file(1), file(1), file(1), file(1)])).toBe(false);
+    expect(ok([file(1_000_000), file(1_000_000)])).toBe(true);
+    expect(ok([file(1_100_000), file(1_100_000)])).toBe(false);
   });
 });

@@ -8,11 +8,24 @@ import { searchSyncQueue } from '../lib/queues';
 import { planSendTimes } from './plan';
 import { enqueueEmails } from './scheduler';
 
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024; // in total: the same files go with every email, and an Ethereal mailbox holds ~100 MB
+const AttachmentInput = z.object({
+  filename: z.string().trim().min(1).max(200),
+  contentType: z.string().trim().min(1).max(200),
+  content: z.base64(),
+});
+
 export const CampaignInput = z.object({
   campaignId: z.uuid(), // made once by the Compose form, so submitting the same form twice creates one campaign
   senderId: z.uuid(),
   subject: z.string().trim().min(1).max(200),
-  body: z.string().trim().min(1).max(50_000),
+  body: z.string().trim().min(1).max(50_000), // plain text: the text part, previews and search
+  html: z.string().max(200_000).optional(), // the formatted version from the editor
+  attachments: z
+    .array(AttachmentInput)
+    .max(3, 'Up to 3 attachments')
+    .refine((files) => files.reduce((n, f) => n + Buffer.byteLength(f.content, 'base64'), 0) <= MAX_ATTACHMENT_BYTES, 'Attachments can be 2 MB in total')
+    .default([]),
   leads: z.array(z.string().trim().toLowerCase().pipe(z.email())).min(1).max(10_000),
   startAt: z.coerce.date(),
   delayMs: z.number().int().min(0).max(3_600_000),
@@ -55,6 +68,7 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
             senderId: sender.id,
             subject: input.subject,
             body: input.body,
+            html: input.html || null,
             startAt: new Date(startAt),
             delayMs: input.delayMs,
             hourlyLimit: input.hourlyLimit,
@@ -68,6 +82,14 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
       const waiting = await tx.email.count({ where: { userId, status: { in: ['scheduled', 'sending'] } } });
       if (waiting + rows.length > cap) {
         throw new HttpError(429, `You have ${waiting} emails waiting to send, and at most ${cap} can wait at once. Upload up to ${Math.max(0, cap - waiting)} leads, or wait for some to send.`);
+      }
+      if (input.attachments.length) {
+        await tx.attachment.createMany({
+          data: input.attachments.map(({ content, ...a }) => {
+            const data = Buffer.from(content, 'base64');
+            return { campaignId, ...a, size: data.length, data };
+          }),
+        });
       }
       for (const part of chunk(rows, 1000)) {
         await tx.email.createMany({ data: part });
@@ -89,7 +111,14 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
           campaignId,
           type: 'campaign_created',
           actor,
-          data: { leads: rows.length, senderId: sender.id, startAt: new Date(startAt).toISOString(), delayMs: input.delayMs, hourlyLimit: input.hourlyLimit },
+          data: {
+            leads: rows.length,
+            senderId: sender.id,
+            startAt: new Date(startAt).toISOString(),
+            delayMs: input.delayMs,
+            hourlyLimit: input.hourlyLimit,
+            attachments: input.attachments.map((a) => a.filename),
+          },
         },
       });
       return true;

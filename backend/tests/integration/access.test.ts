@@ -71,6 +71,14 @@ describe("a user can't see or touch another user's emails", () => {
     expect(await items(`/api/emails/${bobsEmail}/events`, asAlice)).toHaveLength(0);
   });
 
+  it('email page and sidebar counts', async () => {
+    const [asBob, asAlice] = [await login(bob), await login(alice)];
+    expect(await (await get(`/api/emails/${bobsEmail}`, asBob)).json()).toMatchObject({ id: bobsEmail, body: 'b', status: 'failed' });
+    expect((await get(`/api/emails/${bobsEmail}`, asAlice)).status).toBe(404);
+    expect(await (await get('/api/emails/counts', asBob)).json()).toEqual({ scheduled: 0, sent: 1 });
+    expect(await (await get('/api/emails/counts', asAlice)).json()).toEqual({ scheduled: 0, sent: 0 });
+  });
+
   it('retry', async () => {
     const res = await fetch(`${base}/api/emails/${bobsEmail}/retry`, {
       method: 'POST',
