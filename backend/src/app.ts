@@ -15,7 +15,7 @@ import { emailsRouter } from './routes/emails';
 import { sendersRouter } from './routes/senders';
 import { slackRouter } from './routes/slack';
 import { per } from './services/slack';
-import { requireAuth } from './middleware/requireAuth';
+import { requireAdmin, requireAuth } from './middleware/requireAuth';
 
 function bullBoard() {
   const adapter = new ExpressAdapter();
@@ -46,7 +46,7 @@ export function createApp() {
   app.use('/api/campaigns', requireAuth, campaignsRouter);
   app.use('/api/emails', requireAuth, emailsRouter);
   app.use('/api/slack', requireAuth, slackRouter);
-  app.use('/admin/queues', requireAuth, bullBoard());
+  app.use('/admin/queues', requireAuth, requireAdmin, bullBoard()); // shows every user's jobs, so admins only
 
   app.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, ...(err.code && { code: err.code }) });

@@ -19,6 +19,7 @@ vi.mock('../../src/lib/queues', async () => {
   };
 });
 
+import { env } from '../../src/config/env';
 import { prisma } from '../../src/lib/db';
 import { emailQueue, type EmailJob } from '../../src/lib/queues';
 import { redis } from '../../src/lib/redis';
@@ -161,19 +162,31 @@ describe('retryEmail', () => {
 });
 
 describe('scheduleCampaign', () => {
+  const form = (leads: string[]) =>
+    CampaignInput.parse({ campaignId: crypto.randomUUID(), senderId, subject: 's', body: 'b', leads, startAt: new Date().toISOString(), delayMs: 0, hourlyLimit: 10 });
+  const waiting = () => prisma.email.count({ where: { userId, status: { in: ['scheduled', 'sending'] } } });
+
   it('the same form submitted twice at once creates one campaign', async () => {
-    const input = CampaignInput.parse({
-      campaignId: crypto.randomUUID(),
-      senderId,
-      subject: 's',
-      body: 'b',
-      leads: ['a@test.local', 'B@test.local', 'b@test.local'],
-      startAt: new Date().toISOString(),
-      delayMs: 0,
-      hourlyLimit: 10,
-    });
+    const input = form(['a@test.local', 'B@test.local', 'b@test.local']);
     const results = await Promise.all([scheduleCampaign(userId, input), scheduleCampaign(userId, input)]);
     expect(results.map((r) => r.count)).toEqual([2, 2]);
     expect(await prisma.email.count({ where: { campaignId: input.campaignId } })).toBe(2);
+  });
+
+  it('refuses campaigns over the per-user waiting cap, even two sent at once', async () => {
+    const before = await waiting();
+    const saved = env.MAX_PENDING_EMAILS_PER_USER;
+    env.MAX_PENDING_EMAILS_PER_USER = before + 3; // room for one 2-lead campaign, not two
+    try {
+      const two = () => form([`${crypto.randomUUID()}@test.local`, `${crypto.randomUUID()}@test.local`]);
+      const [a, b] = [two(), two()];
+      const results = await Promise.allSettled([scheduleCampaign(userId, a), scheduleCampaign(userId, b)]);
+      expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: { status: 429 } });
+      expect(await waiting()).toBe(before + 2);
+      expect(await prisma.campaign.count({ where: { id: { in: [a.campaignId, b.campaignId] } } })).toBe(1); // the refused one is rolled back
+    } finally {
+      env.MAX_PENDING_EMAILS_PER_USER = saved;
+    }
   });
 });

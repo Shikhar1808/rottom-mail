@@ -44,6 +44,8 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
   // Rows first, in one transaction: nothing is half-saved, and the queue can always be rebuilt from them.
   const created = await prisma.$transaction(
     async (tx) => {
+      // One campaign per user at a time: without it, parallel submits all count the same "waiting" total and pass the cap together.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
       // ON CONFLICT DO NOTHING: a second submit (double-click, resend after an error) waits for the first, then adds nothing.
       const { count } = await tx.campaign.createMany({
         data: [
@@ -61,6 +63,12 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
         skipDuplicates: true,
       });
       if (count === 0) return false;
+      // After the duplicate check, so resubmitting an accepted form still gets its answer. Throwing rolls the campaign back.
+      const cap = env.MAX_PENDING_EMAILS_PER_USER;
+      const waiting = await tx.email.count({ where: { userId, status: { in: ['scheduled', 'sending'] } } });
+      if (waiting + rows.length > cap) {
+        throw new HttpError(429, `You have ${waiting} emails waiting to send, and at most ${cap} can wait at once. Upload up to ${Math.max(0, cap - waiting)} leads, or wait for some to send.`);
+      }
       for (const part of chunk(rows, 1000)) {
         await tx.email.createMany({ data: part });
         await tx.auditEvent.createMany({

@@ -39,6 +39,13 @@ const schema = z.object({
   DEV_LOGIN: z.stringbool().default(false), // one-click login as dev@example.com; only on a localhost APP_URL
   DEFAULT_SENDERS_PER_USER: int(2),
   MAX_SENDERS_PER_USER: int(5),
+  // Stops one account from filling the single server: emails waiting to send (scheduled or sending) per user.
+  MAX_PENDING_EMAILS_PER_USER: positive(20_000),
+  // Google emails allowed to open Bull Board (/admin/queues), which shows every user's jobs. Comma-separated; empty = nobody.
+  ADMIN_EMAILS: z
+    .string()
+    .default('')
+    .transform((s) => s.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)),
 });
 
 const parsed = schema.safeParse(process.env);
