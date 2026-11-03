@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --color-paper: #f6f8fb;
+  --color-ink: #1b2433;
+  --color-muted: #5b6577;
+  --color-line: #dce2ea;
+  --color-airmail: #1d4e89;
+  --color-stamp: #b3261e;
+  --color-sent: #1f7a4d;
+  --color-warn: #9a6700;
+}
+
+body {
+  @apply bg-paper font-sans text-ink antialiased;
+}
+
+/* The airmail envelope edge: the one decorative element, on top of every page. */
+.airmail {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-stamp) 0 10px,
+    transparent 10px 20px,
+    var(--color-airmail) 20px 30px,
+    transparent 30px 40px
+  );
+}
+
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-airmail;
+}
