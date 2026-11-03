@@ -4,7 +4,7 @@ import { ExpressAdapter } from '@bull-board/express';
 import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { devLogin } from './config/env';
+import { devLogin, env } from './config/env';
 import { prisma } from './lib/db';
 import { HttpError } from './utils/errors';
 import { originCheck } from './middleware/originCheck';
@@ -14,6 +14,7 @@ import { campaignsRouter } from './routes/campaigns';
 import { emailsRouter } from './routes/emails';
 import { sendersRouter } from './routes/senders';
 import { slackRouter } from './routes/slack';
+import { per } from './services/slack';
 import { requireAuth } from './middleware/requireAuth';
 
 function bullBoard() {
@@ -31,7 +32,8 @@ export function createApp() {
   app.use(originCheck);
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, devLogin }); // the login page shows the dev button only when this is on
+    // devLogin: the login page shows the dev button only when on. limitWindow: "hour", or "minute" in the demo setup.
+    res.json({ ok: true, devLogin, limitWindow: per(env.RATE_LIMIT_WINDOW_MS) });
   });
   app.get('/api/me', requireAuth, async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, name: true, email: true, avatarUrl: true } });
@@ -47,7 +49,7 @@ export function createApp() {
   app.use('/admin/queues', requireAuth, bullBoard());
 
   app.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message });
+    if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, ...(err.code && { code: err.code }) });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: 'Invalid input', issues: err.issues });
     if (err.status && err.status < 500) return void res.status(err.status).json({ error: err.message }); // e.g. bad JSON
     console.error(err);

@@ -16,7 +16,7 @@ export const PERMANENT_SLACK_ERRORS = new Set([
 export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // "200 per hour" in production, "5 per minute" with the 60s demo window.
-function per(ms: number) {
+export function per(ms: number) {
   for (const [unit, size] of [['hour', 3_600_000], ['minute', 60_000]] as const) {
     if (ms % size === 0) return ms === size ? unit : `${ms / size} ${unit}s`;
   }

@@ -5,8 +5,8 @@ import type { Prisma } from '@prisma/client';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { prisma } from '../lib/db';
 import type { EmailJob } from '../lib/queues';
-import { transportFor } from '../services/mailer';
-import { audit, type Ev, updateEmail } from '../services/emails';
+import { messageIdFor, transportFor } from '../services/mailer';
+import { audit, checkDelivery, type Ev, markFoundSent, updateEmail } from '../services/emails';
 import { gate, nextWindow, sleepUntil } from '../services/limiter';
 
 const LOCK_MS = 30_000; // BullMQ's default lock; a claim younger than this may still be in progress
@@ -46,7 +46,7 @@ export async function processEmail(job: Job<EmailJob>, token?: string) {
       to: email.toEmail,
       subject: email.campaign.subject,
       text: email.campaign.body,
-      messageId: `<${email.id}@reachinbox.local>`, // fixed id: lets a crash check find it at the server later
+      messageId: messageIdFor(email.id), // fixed id: lets the delivery check find it in the mailbox later
     });
   } catch (err) {
     return handleSendError(job, token, email, err as SmtpError, ev);
@@ -78,6 +78,7 @@ async function handleSendError(job: Job<EmailJob>, token: string | undefined, em
   }
   if (!code) {
     // No SMTP reply: the connection may have dropped after the server took the message, so a resend could duplicate it.
+    // shortcut: parked without a mailbox check; the check runs when the user clicks Retry send. Add a delayed automatic check if these pile up.
     await updateEmail(email.id, { status: 'needs_check', error }, ev('needs_check', { reason: 'no SMTP reply', error, code: err.code ?? null }), ['sending']);
     throw new UnrecoverableError(error);
   }
@@ -93,6 +94,15 @@ async function recoverAfterCrash(job: Job<EmailJob>, token: string | undefined, 
     await job.moveToDelayed(Date.now() + LOCK_MS, token); // the claiming worker may still be mid-send
     throw new DelayedError();
   }
-  // shortcut: no IMAP Message-ID check yet (Option C, docs/03), so an interrupted send always waits for a manual Retry send; add the check in the P1 block.
-  await updateEmail(email.id, { status: 'needs_check', error: 'Worker stopped mid-send; delivery unknown' }, ev('needs_check', { reason: 'interrupted while sending' }), ['sending']);
+  // The worker that claimed it died mid-send. Look in the mailbox before deciding (Option C, docs/03).
+  const check = await checkDelivery(email);
+  if (check.result === 'found') {
+    await markFoundSent(email, ev('delivery_checked', check), 'sending');
+  } else if (check.result === 'not_found') {
+    // It never left: put it back and send it now, through the limiter and the claim like any other email.
+    if (await updateEmail(email.id, { status: 'scheduled' }, ev('delivery_checked', check), ['sending'])) await processEmail(job, token);
+  } else {
+    const error = `Worker stopped mid-send. ${check.reason}`;
+    await updateEmail(email.id, { status: 'needs_check', error }, ev('needs_check', { reason: 'interrupted while sending', check: check.reason }), ['sending']);
+  }
 }

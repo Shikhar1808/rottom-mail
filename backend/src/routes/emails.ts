@@ -3,8 +3,7 @@ import { EmailStatus, type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/db';
 import { HttpError } from '../utils/errors';
-import { emailQueue } from '../lib/queues';
-import { updateEmail } from '../services/emails';
+import { retryEmail } from '../services/emails';
 import { searchEmailIds } from '../services/search';
 
 export const emailsRouter = Router();
@@ -67,17 +66,10 @@ emailsRouter.get('/:id/events', async (req, res) => {
   res.json({ items: events.map((e) => ({ ...e, id: e.id.toString() })) }); // BigInt isn't JSON-serialisable
 });
 
-// Manual replay for parked or failed emails. Goes through updateEmail, so it's audited (unlike a Bull Board retry).
+// "Retry send". force: send again even when the mailbox check can't tell whether the first try went out (the UI asks first).
+const RetryBody = z.object({ force: z.boolean().optional() });
+
 emailsRouter.post('/:id/retry', async (req, res) => {
-  const email = await prisma.email.findFirst({ where: { id: req.params.id, userId: req.userId } });
-  if (!email) throw new HttpError(404, 'Email not found');
-  const ok = await updateEmail(
-    email.id,
-    { status: 'scheduled', scheduledAt: new Date(), error: null },
-    { userId: email.userId, campaignId: email.campaignId, type: 'retry_requested', actor: `user:${req.userId}`, fromStatus: email.status },
-    ['needs_check', 'failed'],
-  );
-  if (!ok) throw new HttpError(409, 'Only failed or needs-check emails can be retried');
-  await emailQueue.add('send', { emailId: email.id }, { jobId: `${email.id}-retry-${email.attempts}` });
-  res.json({ ok: true });
+  const { force } = RetryBody.parse(req.body ?? {});
+  res.json(await retryEmail(req.userId!, req.params.id, force));
 });

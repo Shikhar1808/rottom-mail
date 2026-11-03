@@ -5,8 +5,9 @@ import crypto from 'node:crypto';
 import { type Job, Worker } from 'bullmq';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { sendMail } = vi.hoisted(() => ({ sendMail: vi.fn() }));
-vi.mock('../../src/services/mailer', () => ({ transportFor: () => ({ sendMail }) }));
+const { sendMail, findInMailbox } = vi.hoisted(() => ({ sendMail: vi.fn(), findInMailbox: vi.fn() }));
+// SMTP and the IMAP mailbox lookup are faked; messageIdFor stays real.
+vi.mock('../../src/services/mailer', async (importOriginal) => ({ ...(await importOriginal<object>()), transportFor: () => ({ sendMail }), findInMailbox }));
 // Rate limits have their own tests (limiter.test.ts); here every email may send right away.
 vi.mock('../../src/services/limiter', async (importOriginal) => ({ ...(await importOriginal<object>()), gate: async () => undefined }));
 vi.mock('../../src/lib/queues', async () => {
@@ -22,6 +23,7 @@ import { prisma } from '../../src/lib/db';
 import { emailQueue, type EmailJob } from '../../src/lib/queues';
 import { redis } from '../../src/lib/redis';
 import { CampaignInput, scheduleCampaign } from '../../src/services/campaigns';
+import { retryEmail } from '../../src/services/emails';
 import { repairQueues } from '../../src/services/scheduler';
 import { processEmail } from '../../src/workers/emailWorker';
 
@@ -35,6 +37,13 @@ const status = async (id: string) => (await prisma.email.findUniqueOrThrow({ whe
 const fakeJob = (emailId: string) => ({ data: { emailId }, attemptsMade: 0, opts: { attempts: 8 }, moveToDelayed: vi.fn(), updateData: vi.fn() }) as unknown as Job<EmailJob>;
 const smtpError = (responseCode?: number, code?: string) => Object.assign(new Error(`smtp ${responseCode ?? code}`), { responseCode, code });
 const accepted = { messageId: 'm', response: '250 Accepted' };
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+/** An email whose send attempt `claimedMinutesAgo` ended without a known result. */
+const unsure = async (status: 'sending' | 'needs_check', claimedMinutesAgo: number) => {
+  const id = await newEmail();
+  await prisma.email.update({ where: { id }, data: { status, claimedAt: minutesAgo(claimedMinutesAgo) } });
+  return id;
+};
 
 beforeAll(async () => {
   await prisma.user.create({ data: { id: userId, googleId: `test:${userId}`, email: 'test@test.local', name: 'Test' } });
@@ -46,6 +55,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   sendMail.mockReset();
+  findInMailbox.mockReset();
 });
 
 afterAll(async () => {
@@ -91,6 +101,23 @@ describe('processEmail', () => {
     await processEmail(fakeJob(id));
     expect(await status(id)).toBe('sent');
   });
+
+  it('after a crash mid-send it checks the mailbox: found = sent, not found = send now, unsure = needs_check', async () => {
+    const cases = [
+      [true, 2, 'sent', 0],
+      [false, 2, 'sent', 1],
+      [new Error('imap down'), 2, 'needs_check', 0],
+      [false, 120, 'needs_check', 0], // over an hour old: Ethereal may have deleted it, so "not found" proves nothing
+    ] as const;
+    for (const [inMailbox, claimedMinutesAgo, expected, sends] of cases) {
+      sendMail.mockReset().mockResolvedValue(accepted);
+      if (inMailbox instanceof Error) findInMailbox.mockRejectedValueOnce(inMailbox);
+      else findInMailbox.mockResolvedValueOnce(inMailbox);
+      const id = await unsure('sending', claimedMinutesAgo);
+      await processEmail(fakeJob(id));
+      expect([await status(id), sendMail.mock.calls.length]).toEqual([expected, sends]);
+    }
+  });
 });
 
 describe('repairQueues', () => {
@@ -108,7 +135,31 @@ describe('repairQueues', () => {
   });
 });
 
-// Last: it adds waiting jobs, and the repair test above takes the next job from the queue.
+// After repairQueues from here on: these add waiting jobs, and the repair test takes the next job from the queue.
+describe('retryEmail', () => {
+  const queued = async (id: string) => Boolean(await emailQueue.getJob(`${id}-retry-0`));
+
+  it('marks a needs-check email sent if the mailbox has it, and queues it if not', async () => {
+    findInMailbox.mockResolvedValueOnce(true);
+    const found = await unsure('needs_check', 5);
+    expect(await retryEmail(userId, found)).toEqual({ result: 'sent' });
+    expect([await status(found), await queued(found)]).toEqual(['sent', false]);
+
+    findInMailbox.mockResolvedValueOnce(false);
+    const missing = await unsure('needs_check', 5);
+    expect(await retryEmail(userId, missing)).toEqual({ result: 'queued' });
+    expect([await status(missing), await queued(missing)]).toEqual(['scheduled', true]);
+  });
+
+  it("asks first when the check can't tell, and sends again only with force", async () => {
+    findInMailbox.mockResolvedValue(false);
+    const id = await unsure('needs_check', 120);
+    await expect(retryEmail(userId, id)).rejects.toMatchObject({ status: 409, code: 'delivery_unknown' });
+    expect([await status(id), await queued(id)]).toEqual(['needs_check', false]);
+    expect(await retryEmail(userId, id, true)).toEqual({ result: 'queued' });
+  });
+});
+
 describe('scheduleCampaign', () => {
   it('the same form submitted twice at once creates one campaign', async () => {
     const input = CampaignInput.parse({
