@@ -162,7 +162,8 @@ Ethereal limits public accounts to **200 messages/hour** (then rejects until the
 
 ## Demo and test settings
 
-- **Demo:** `RATE_LIMIT_WINDOW_MS=60000`, `MAX_EMAILS_PER_HOUR_PER_SENDER=5`, 15 leads. You'll see 5 sends, a Slack alert, and 10 moved to the next minute in order. Then switch `RATE_LIMIT_MODE=global` and repeat.
+- **Demo:** `npm run demo:api` + `npm run demo:worker` set a 60s window and a cap of 5 without editing `.env` (files in `backend/demo/`). Schedule 15 leads from each of the two senders with a Compose limit above 5: each sender sends 5 in the minute, gets a Slack alert, and its other 10 move to the next minutes in order. Then restart only the worker with `npm run demo:worker:global` and repeat: 5 in total across both senders, the queue pauses, and the rest wait under Waiting with their times unchanged.
+- **Checked end to end (2026-11-03):** per-sender: 5 + 5 sent in the minute, 20 `deferred_rate_limit` events, all moved past the minute. Global: 3 + 2 sent, one `queue_paused` event, 25 jobs waiting.
 - **Tests (vitest, real Redis from docker):**
   - spacing is ≥ `gap`
   - the limit hit returns `hitLimit` exactly once

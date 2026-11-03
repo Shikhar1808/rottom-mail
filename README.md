@@ -35,7 +35,7 @@ Full detail: [architecture](./docs/01-architecture.md) · [decisions](./docs/02-
 | BullMQ delayed jobs, no cron | `delay` + `jobId`. ESLint fails the build on cron code | [03](./docs/03-scheduling-persistence.md#no-cron) | ⬜ |
 | Multiple senders via Ethereal | 2 Ethereal mailboxes auto-created per user, pooled SMTP | [08](./docs/08-senders-ethereal.md) | ⬜ |
 | Searchable via Elasticsearch | `search-sync` queue + "ES finds, Postgres shows" | [05](./docs/05-search-elasticsearch.md) | ⬜ |
-| Live BullMQ dashboard | Bull Board `/admin/queues` (read-only, behind login) | [07](./docs/07-audit-observability.md#bull-board) | ⬜ |
+| Live BullMQ dashboard | Bull Board `/admin/queues` (read-only, admins only via `ADMIN_EMAILS`) | [07](./docs/07-audit-observability.md#bull-board) | ⬜ |
 | Survive restarts, no duplicates | AOF + startup repair + jobId + atomic claim + crash check | [03](./docs/03-scheduling-persistence.md) | ⬜ |
 | Configurable worker concurrency | `WORKER_CONCURRENCY`, safe in parallel | [09](./docs/09-scaling-impacts.md) | ⬜ |
 | Minimum delay between sends | `MIN_DELAY_BETWEEN_SENDS_MS=2000` | [04](./docs/04-rate-limiting.md) | ⬜ |
@@ -74,8 +74,18 @@ npm run dev:slack-webhook <hooks.slack.com URL> # dev only: alerts to a plain Sl
 
 cd ../frontend
 npm install
-npm run dev                                    # https://localhost:5173 (http without mkcert). Bull Board: /admin/queues
+npm run dev                                    # https://localhost:5173 (http without mkcert). Bull Board: /admin/queues (your email must be in ADMIN_EMAILS)
 ```
+
+**Demo limits without editing `.env`:** start these instead of `dev:api` / `dev:worker`. They load [`backend/demo/minute-limits.env`](./backend/demo/minute-limits.env) on top of `.env`: 1-minute windows and a cap of 5.
+
+```bash
+npm run demo:api            # API with 1-minute windows (the Compose field reads "Limit per minute")
+npm run demo:worker         # per-sender mode: 5 per minute per sender
+npm run demo:worker:global  # global mode: 5 per minute across all senders (adds backend/demo/global-mode.env)
+```
+
+To switch modes, stop the worker (Ctrl+C) and start the other worker command. The API keeps running. In Compose, set the limit above 5 (the default 200 is fine), or the campaign spaces itself out and the server cap never has to act.
 
 ### Environment
 
@@ -92,14 +102,20 @@ npm run dev                                    # https://localhost:5173 (http wi
 | `WORKER_QUEUES` | `emails,search-sync,notifications` | Which queues this worker process runs |
 | `MIN_DELAY_BETWEEN_SENDS_MS` | `2000` | Minimum delay |
 | `MAX_EMAILS_PER_HOUR` / `MAX_EMAILS_PER_HOUR_PER_SENDER` | `200` | Hourly caps |
-| `RATE_LIMIT_WINDOW_MS` | `3600000` | `60000` for the demo |
+| `RATE_LIMIT_WINDOW_MS` | `3600000` | `60000` for the demo (set by `npm run demo:*`) |
 | `SMTP_MODE` | `ethereal` | `fake` for load tests (nothing sent) |
 | `DEV_LOGIN` | `false` | `true` adds a "Dev login" button (as `dev@example.com`) for trying the UI before Google is set up. Works only when `APP_URL` is localhost, and never with `NODE_ENV=production` |
 | `DEFAULT_SENDERS_PER_USER` / `MAX_SENDERS_PER_USER` | `2` / `5` | Ethereal mailboxes per user |
+| `ADMIN_EMAILS` | empty | Google emails allowed to open Bull Board. It shows every user's jobs, so everyone else gets 403 |
+| `MAX_PENDING_EMAILS_PER_USER` | `20000` | Emails one user may have waiting at once. A campaign that would go over is refused (429) |
 
 ### Ethereal
 
 Nothing to set up: the first time a user opens Compose, the backend creates 2 Ethereal mailboxes for them (`nodemailer.createTestAccount()`), and "Add sender" creates more. Every sent email has a preview link (Ethereal keeps messages for a few hours). Details: [docs/08](./docs/08-senders-ethereal.md).
+
+### Sample leads
+
+[`samples/`](./samples) has `leads-15.csv`, `leads-30.csv`, `leads-100.csv` and `leads-200.csv` to upload in Compose. The addresses are made up and use `example.com`, a reserved domain that belongs to no one. Ethereal catches every email anyway, so nothing reaches a real inbox. Any CSV or text file works: the form picks out every email address in it, lowercases them and drops duplicates.
 
 ### Google and Slack apps
 
@@ -121,6 +137,7 @@ Step by step: [docs/06](./docs/06-auth-slack.md).
 - **Hosting:** one origin. Caddy (prod) and the Vite proxy (local) forward `/api`, `/auth` and `/admin` to a private API, so there's no CORS and no public API hostname. Production adds one new GoDaddy record and leaves the domain's existing sites untouched.
 - **Local HTTPS uses mkcert for now** (only because Slack needs HTTPS redirects). A relay page or a real certificate on `local.your-domain.com` is the later fix.
 - **Sessions:** a Redis-backed random ID cookie (`__Host-` prefix on https). Logout really ends the session.
+- **Open to anyone:** each user sees only their own emails, history and Slack connection. Bull Board shows everyone's jobs, so only `ADMIN_EMAILS` can open it. One user can have at most 20,000 emails waiting. The privacy policy is at `/privacy`, because Google needs one before it opens sign-in to everyone.
 - **Skipped on purpose:** hash-chained audit, sender rotation, per-sender limit column, "limit cleared" Slack messages, sending through users' Gmail.
 
 All decisions with alternatives: [docs/02](./docs/02-design-decisions.md). Sources and research data: [docs/references.md](./docs/references.md).

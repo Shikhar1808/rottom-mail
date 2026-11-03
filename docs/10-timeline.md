@@ -98,7 +98,7 @@
 - [ ] Google login on `https://localhost:5173`: header shows name, email, avatar. Logout works
 - [ ] Compose: CSV count, schedule 5 emails +1 min. They send, Ethereal previews open, Sent tab updates
 - [ ] **Restart:** schedule +2 min, stop API + worker (+ `docker restart redis`), start. Each sends once, on time
-- [ ] **Rate limit:** 60s window, cap 5, 15 leads. 5 sent, 10 moved in order. Repeat with `RATE_LIMIT_MODE=global`
+- [x] **Rate limit:** 60s window, cap 5, 15 leads per sender (`npm run demo:api` + `demo:worker`, then `demo:worker:global`). Checked end to end: 5 per sender then 10 moved; global 5 in total, queue paused
 - [ ] **Slack:** alert via the dev webhook, then Connect / Disconnect / Reconnect. No crash when not connected
 - [ ] Search box finds emails. Bull Board shows the queues
 - [ ] `SMTP_MODE=fake` load test with 1000 leads
@@ -107,6 +107,8 @@
 ## After the submission is safe (P2)
 
 - [ ] P2 **Deploy to AWS (2–3h):** EC2 + Elastic IP, new GoDaddy A record, security group, Caddyfile, compose up with `--scale worker=2`, prod OAuth redirect URIs, smoke test ([11](./11-deployment-aws.md)). Add the live URL to the README
+- [x] P2 Open to the public, code side: Bull Board admins only, per-user waiting cap, privacy page ([02 D26](./02-design-decisions.md#d26--open-to-the-public-))
+- [ ] P2 Open to the public, settings side: publish the Google app, activate Slack public distribution, put a contact email on the privacy page ([11](./11-deployment-aws.md))
 - [ ] P2 Replace mkcert with the relay page or `local.your-domain.com` + a real certificate ([06](./06-auth-slack.md#local-dev-and-slack))
 
 ## Cut line (if behind, drop in this order)
@@ -125,7 +127,7 @@
 - [ ] 1:00–1:45 Compose: upload CSV (count shown), start +1 min, delay 2s, hourly limit. Schedule. Scheduled tab fills
 - [ ] 1:45–2:30 Bull Board shows delayed jobs. Emails send, Sent tab updates, Ethereal preview opens
 - [ ] 2:30–3:30 **Restart:** schedule +2 min, stop the API + worker (and `docker restart redis`), start again. They send on time, once (Bull Board counts, audit)
-- [ ] 3:30–4:30 **Rate limit:** `RATE_LIMIT_WINDOW_MS=60000`, cap 5, 15 leads. 5 send, live Slack alert, 10 moved to the next minute in order. Switch to `global` and show the paused queue
+- [ ] 3:30–4:30 **Rate limit** (running `npm run demo:api` + `npm run demo:worker` from the start, so nothing is edited on camera): `samples/leads-15.csv` from each sender, limit 100. 5 per sender send, live Slack alert, 10 moved to the next minute in order. Ctrl+C the worker, `npm run demo:worker:global`, repeat: 5 in total, paused queue in Bull Board
 - [ ] 4:30–5:00 Search box + one email's audit timeline
 
 ## Submission checklist

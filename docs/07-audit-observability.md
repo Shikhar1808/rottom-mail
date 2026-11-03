@@ -78,10 +78,10 @@ createBullBoard({
   queues: [emailQueue, searchSyncQueue].map(q => new BullMQAdapter(q, { readOnlyMode: true })),
   serverAdapter,
 });
-app.use('/admin/queues', requireAuth, serverAdapter.getRouter());
+app.use('/admin/queues', requireAuth, requireAdmin, serverAdapter.getRouter()); // admins only: it shows every user's jobs
 ```
 
-It's served on the same domain (`https://rottom.your-domain.com/admin/queues`, through Caddy). In production it can additionally be limited to your IP in the Caddyfile ([11](./11-deployment-aws.md)).
+Only users whose Google email is in `ADMIN_EMAILS` can open it; everyone else gets 403, because it shows every user's jobs. It's served on the same domain (`https://rottom.your-domain.com/admin/queues`, through Caddy). In production it can additionally be limited to your IP in the Caddyfile ([11](./11-deployment-aws.md)).
 
 | State | Meaning here |
 |---|---|
@@ -95,7 +95,7 @@ It's served on the same domain (`https://rottom.your-domain.com/admin/queues`, t
 |---|---|---|---|
 | React dashboard | users | emails (Scheduled / Sent) | Postgres |
 | Audit timeline | users / support | history of one email | Postgres `AuditEvent` |
-| Bull Board | developer / admin | queue jobs and their state | Redis |
+| Bull Board | admins (`ADMIN_EMAILS`) | queue jobs and their state, all users | Redis |
 
 **In the demo:**
 - **Restart:** the Delayed count is unchanged.

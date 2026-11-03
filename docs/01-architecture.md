@@ -18,7 +18,7 @@ The system schedules and sends emails at scale. Users schedule emails through an
 | Queue / coordination | Redis (AOF on, `noeviction`) | BullMQ jobs, rate-limit counters and slots, sessions, OAuth `state`, locks |
 | Search | Elasticsearch 8 (single node) | Full-text search over emails |
 | SMTP | Ethereal via `nodemailer` | Fake SMTP: catches every message, delivers nothing. IMAP is used for the crash check |
-| Queue UI | `@bull-board/express` at `/admin/queues` | Live view of the queues, read-only, behind login |
+| Queue UI | `@bull-board/express` at `/admin/queues` | Live view of the queues, read-only, admins only (`ADMIN_EMAILS`) |
 | Login | Google OAuth (`google-auth-library`) | Real login. Name, email and avatar in the header |
 | Alerts | Slack OAuth v2 (`incoming-webhook`) | Live message when an hourly limit is reached |
 
@@ -205,7 +205,7 @@ Dashboard tabs: **Scheduled** shows `scheduled` and `sending`. **Sent** shows `s
 | GET | `/api/me` | session | Name, email, avatar for the header |
 | GET | `/api/senders` | session | List the user's senders. Creates 2 Ethereal mailboxes if they have none ([08](./08-senders-ethereal.md)) |
 | POST | `/api/senders` | session | "Add sender" (cap 5 per user) |
-| POST | `/api/campaigns` | session | Schedule: `{ campaignId, senderId, subject, body, leads[], startAt, delayMs, hourlyLimit }`. The form makes `campaignId` once, so submitting it twice creates one campaign |
+| POST | `/api/campaigns` | session | Schedule: `{ campaignId, senderId, subject, body, leads[], startAt, delayMs, hourlyLimit }`. The form makes `campaignId` once, so submitting it twice creates one campaign. Refused with 429 if the user would have more than `MAX_PENDING_EMAILS_PER_USER` emails waiting |
 | GET | `/api/emails?tab=scheduled\|sent&cursor=` | session | Tabs, read from **Postgres**, cursor pagination |
 | GET | `/api/emails/search?q=&status=` | session | **ES finds the IDs, Postgres shows the rows** ([05](./05-search-elasticsearch.md)) |
 | GET | `/api/emails/:id/events` | session | Audit timeline for one email |
@@ -214,7 +214,7 @@ Dashboard tabs: **Scheduled** shows `scheduled` and `sending`. **Sent** shows `s
 | GET | `/api/slack/connect` | session | Start Slack OAuth |
 | GET | `/api/slack/callback` | session | Finish Slack OAuth |
 | DELETE | `/api/slack` | session | Disconnect |
-| GET | `/admin/queues` | session | Bull Board (read-only) |
+| GET | `/admin/queues` | admin | Bull Board (read-only). Only users in `ADMIN_EMAILS`; everyone else gets 403 |
 
 Every state-changing request (POST/PUT/DELETE) must carry `Origin: APP_URL` and JSON content ([06](./06-auth-slack.md#security-checklist)).
 

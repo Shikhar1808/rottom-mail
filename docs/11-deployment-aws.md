@@ -42,7 +42,7 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    rottom.your-domain.com {
      handle /api/*   { reverse_proxy api:4000 }
      handle /auth/*  { reverse_proxy api:4000 }
-     handle /admin/* { reverse_proxy api:4000 }     # Bull Board; optionally limit to your IP
+     handle /admin/* { reverse_proxy api:4000 }     # Bull Board (admins only); optionally limit to your IP
      handle {
        root * /srv/frontend
        try_files {path} /index.html
@@ -57,9 +57,13 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    - `SLACK_REDIRECT_URI=https://rottom.your-domain.com/api/slack/callback`
    - real `ENCRYPTION_KEY`, Google and Slack secrets
    - `RATE_LIMIT_WINDOW_MS=3600000`
+   - `ADMIN_EMAILS=<your Google email>` (who can open Bull Board)
+   - `MAX_PENDING_EMAILS_PER_USER=20000` (the default)
 8. **OAuth redirect URIs (add alongside the local ones):**
    - Google: `https://rottom.your-domain.com/auth/google/callback`. Add the domain to the consent screen's authorized domains.
    - Slack: `https://rottom.your-domain.com/api/slack/callback`. Real HTTPS, so there's no localhost question in production.
+   - **To let anyone sign in:** Google Auth Platform → Audience → **Publish app** (from Testing to In production). Google wants a homepage and the privacy policy (`https://rottom.your-domain.com/privacy`) on the authorized domain. The app asks only for `openid email profile`, so no security review is expected. If Google asks to verify the domain, that's one new TXT record on GoDaddy.
+   - **To let anyone connect their own Slack:** Slack app → **Manage Distribution** → **Activate Public Distribution**. No Marketplace listing is needed.
 9. **Deploy:**
    ```bash
    git pull
@@ -68,7 +72,7 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    docker compose exec api npx prisma migrate deploy
    ```
    Two workers show multiple consumers working safely in production.
-10. **Smoke test:** login → schedule → send → Slack connect + alert → search → Bull Board at `/admin/queues`.
+10. **Smoke test:** login → schedule → send → Slack connect + alert → search → Bull Board at `/admin/queues` (403 for a non-admin account) → `/privacy` loads.
 11. **Cost:** roughly **$35–70/month** (instance + disk + AWS's public-IPv4 charge). **Stop the instance after the review.** Backups: take a manual EBS snapshot before demos (no scheduled backup jobs).
 
 ## Why not managed AWS services (for now)

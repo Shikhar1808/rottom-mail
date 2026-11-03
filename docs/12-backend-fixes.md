@@ -19,8 +19,10 @@ Every bug found in the backend so far, what it could have done, and what changed
 | 11 | A sender's next free slot is kept until it has passed | Two campaigns from one sender sending seconds apart | Review 2 | `78cda1f` | ✅ |
 | 12 | Tests are linted again | Dead code collecting in the tests | Review 2 | `78cda1f` | — |
 | 13 | Mailbox check before resending (Option C) | A second copy after a crash or a Retry click | Frontend review | `6abeb00` | ✅ |
+| 14 | Bull Board for admins only | Any user seeing every other user's queue jobs | Opening to the public | `51ef6aa` | ✅ |
+| 15 | Cap on waiting emails per user | One account filling the single server | Opening to the public | `51ef6aa` | ✅ |
 
-All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
+All 30 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 
 ## Review 1: Day 1 code (fixed in `cfa8ef7`)
 
@@ -134,8 +136,23 @@ All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 - **Where:** `backend/src/services/mailer.ts` (`findInMailbox`), `backend/src/services/emails.ts` (`checkDelivery`, `retryEmail`), `backend/src/workers/emailWorker.ts` (`recoverAfterCrash`), `frontend/src/components/EmailTable.tsx`
 - **Test:** `delivery.test.ts` › "after a crash mid-send it checks the mailbox…", and the two `retryEmail` tests. Both fail if "not found" is trusted at any age.
 
+## Opening to the public (fixed in `51ef6aa`)
+
+### 14. Any logged-in user could see every user's queue jobs
+
+- **Problem:** Bull Board (`/admin/queues`) was behind login only. It shows all jobs in the queues, for every user: email ids, send times and error text. Fine for one person, not once anyone can sign in.
+- **Fix:** `requireAdmin` after `requireAuth`. Only users whose Google email is in `ADMIN_EMAILS` get in; everyone else gets 403. The email can be trusted because login only accepts verified Google emails.
+- **Where:** `backend/src/middleware/requireAuth.ts` (`requireAdmin`), `backend/src/app.ts`, `backend/src/config/env.ts`
+- **Test:** `access.test.ts` › "only users in ADMIN_EMAILS can open the queue dashboard". It fails without `requireAdmin`. The same file checks that one user can't list, read the history of, or retry another user's email.
+
+### 15. One account could fill the server
+
+- **Problem:** each campaign was capped at 10,000 leads, but nothing limited how many campaigns one user scheduled. A script could add millions of rows to Postgres, Redis and Elasticsearch on the single server.
+- **Fix:** at most `MAX_PENDING_EMAILS_PER_USER` (20,000) emails waiting (scheduled or sending) per user. A campaign that would go over is refused with 429, and the transaction rolls back, so nothing is saved. A per-user Postgres lock (`pg_advisory_xact_lock`) taken at the start of the transaction makes the count exact. Without it, parallel submits all see the same total and pass together. The check runs after the duplicate check, so resubmitting an accepted form still gets its answer.
+- **Where:** `backend/src/services/campaigns.ts` (`scheduleCampaign`), `backend/src/config/env.ts`
+- **Test:** `delivery.test.ts` › "refuses campaigns over the per-user waiting cap, even two sent at once". It failed 3 times out of 3 without the lock.
+
 ## Known and not fixed
 
 - **SMTP 4xx has no cap on deferrals.** A 4xx reply moves the email to the next window without using a try, so a sender that always answers 4xx is deferred forever. It's marked with a `shortcut:` comment in `emailWorker.ts`.
 - **Some "Needs check" emails still need a person.** When the mailbox check can't tell (the attempt is over an hour old, or IMAP is down), Retry asks before sending again. An email with no SMTP reply is parked without an automatic check; the check runs when someone clicks Retry. It's marked with a `shortcut:` comment in `emailWorker.ts`.
-- **Bull Board shows every user's jobs**, not only your own. It is read-only and behind login (D21 in [docs/02](./02-design-decisions.md)).

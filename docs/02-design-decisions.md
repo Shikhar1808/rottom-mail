@@ -26,11 +26,12 @@ Every decision made during the design discussion. Each one records the options w
 | D18 | ES sync | `search-sync` queue, outbox-style, version check | ✅ |
 | D19 | Read paths | Tabs from Postgres. Search: ES finds, Postgres shows | ✅ |
 | D20 | Audit | Append-only audit trail, no hash chain | ✅ |
-| D21 | Bull Board | Read-only, behind login, keeps recent completed jobs | ✅ |
+| D21 | Bull Board | Read-only, admins only, keeps recent completed jobs | ✅ |
 | D22 | Scaling | Workers per queue, graceful shutdown, `SMTP_MODE=fake` for load tests | ✅ |
 | D23 | Ethereal's own limit | Not relied on: our Redis limiter first, Ethereal's 4xx as a backstop | ✅ |
 | D24 | Deployment | Single EC2 + Docker Compose + Caddy, after the local demo | 🟡 |
 | D25 | Cookie names | `__Host-` prefix when served over https | 🟡 |
+| D26 | Open to the public | Own data only, admin-only Bull Board, per-user waiting cap, privacy page | ✅ |
 | O1 | Compose fields | Form = plan, env caps = guard (two layers) | ❓ |
 | O2 | Sender rotation | One "From" per campaign for v1 | ❓ |
 | O3 | Per-sender limit column | One env cap for v1 | ❓ |
@@ -183,7 +184,7 @@ Every decision made during the design discussion. Each one records the options w
 - **Details:** [07](./07-audit-observability.md)
 
 ### D21 · Bull Board ✅
-- **Setup:** `@bull-board/express` at `/admin/queues`, behind `requireAuth`, `readOnlyMode: true` (so no unaudited retries or deletes), showing `emails` and `search-sync`.
+- **Setup:** `@bull-board/express` at `/admin/queues`, behind `requireAuth` + `requireAdmin` (only `ADMIN_EMAILS`, because it shows every user's jobs), `readOnlyMode: true` (so no unaudited retries or deletes), showing `emails` and `search-sync`.
 - **Keeps recent jobs:** `removeOnComplete: { age: 86400, count: 1000 }`, so the Completed list isn't empty and re-adding a finished job's ID is ignored.
 
 ### D22 · Scaling basics ✅
@@ -223,6 +224,15 @@ Every decision made during the design discussion. Each one records the options w
 - **Why:** with a domain that hosts other sites, a compromised sibling subdomain could plant a cookie for the whole domain ("cookie tossing"), e.g. a fake session or a fake `g_oauth`. Browsers only accept a `__Host-` cookie if it's `Secure`, has `Path=/` and has no `Domain`, so siblings can't create one.
 - **How:** `__Host-sid` and `__Host-g_oauth` (path `/`) when `APP_URL` is https. Plain `sid` / `g_oauth` on `http://localhost`.
 - **Details:** [06](./06-auth-slack.md#whats-in-the-cookies)
+
+### D26 · Open to the public ✅
+- **Goal:** anyone with a Google account can use the production site, so users must not trust each other.
+- **Own data only:** every query is filtered by the session's `userId` (tabs, search, history, retry, senders, Slack). `tests/integration/access.test.ts` checks it through the real app.
+- **Bull Board, admins only:** it can't filter by user, so only the Google emails in `ADMIN_EMAILS` can open it. The email is safe to trust because login only accepts verified Google emails. Options: an IP allowlist in Caddy (breaks on a changing home IP), a separate password (one more secret), or hiding it entirely in production (loses the live dashboard).
+- **Per-user cap:** at most `MAX_PENDING_EMAILS_PER_USER` (20,000) emails waiting per user. A campaign that would go over is refused with 429, and nothing is saved. A per-user Postgres lock (`pg_advisory_xact_lock`) makes the count exact, so parallel submits can't pass the cap together. Each campaign is still capped at 10,000 leads.
+- **Privacy policy** at `/privacy`, linked from the login page. Google requires one before the app can leave "Testing". It's honest about the audit log being permanent.
+- **Spam:** not a risk, because every email goes to Ethereal, which never delivers to real inboxes.
+- **Not done:** no per-IP request limit on the API, and no self-service account deletion (by request instead).
 
 ---
 

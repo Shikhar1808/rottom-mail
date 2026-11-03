@@ -324,5 +324,6 @@ Login asks for no mail permission. Sending through Gmail needs the `gmail.send` 
 - [ ] Redirects built from env, no `?next=`
 - [ ] Every query filtered by `userId` from the session (including the second check in ES search)
 - [ ] User text escaped in Slack messages
-- [ ] Bull Board behind login, read-only
+- [ ] Bull Board read-only, admins only (`ADMIN_EMAILS`)
+- [ ] Per-user cap on waiting emails (`MAX_PENDING_EMAILS_PER_USER`)
 - [ ] `.env`, `*.pem`, `certs/` git-ignored. Only `.env.example` committed
