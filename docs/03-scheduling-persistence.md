@@ -56,7 +56,7 @@ redis:
 | Worker, while emails wait | Nothing is lost (jobs are in Redis). After restart they send on time, or right away if overdue |
 | Worker, mid-job before the claim | BullMQ's stalled check (lock expires, ~30s) re-queues it, and it sends normally |
 | Worker, after the SMTP send, before marking `sent` | Row is still `sending`. The retry runs the Option C check, finds the Message-ID, marks `sent`. **No duplicate** |
-| Worker, after the claim, before the SMTP send | Row is still `sending`. The check finds nothing, so it sends. **Not lost** |
+| Worker, after the claim, before the SMTP send | Row is still `sending`. The check finds nothing, so it sends. **Not lost**. If the worker was down for over an hour, "not found" can't be trusted (Ethereal deletes old messages), so the row becomes `needs_check` |
 | Redis | AOF loses at most ~1s. Startup repair restores any missing jobs from Postgres. Rate-limit counters for the current window may reset (a few extra sends possible that hour) |
 | Postgres | Data is safe. Jobs retry with backoff for about 10 minutes (8 tries). If the outage lasts longer, rows stay `scheduled` and startup repair replaces their dead jobs |
 | Whole machine | Both stores are on Docker volumes. Same as above |
@@ -73,15 +73,20 @@ flowchart TD
   B -- "scheduled" --> N["Normal path: limiter, claim, send"]
   B -- "sending (crash recovery)" --> C{"claimedAt older than the lock (30s)?"}
   C -- "no" --> W["Another worker may still be sending: retry later"]
-  C -- "yes" --> D["IMAP: search the sender's Ethereal mailbox for Message-ID"]
-  D -- "found" --> S["Mark sent (audit stalled_recovered)"]
-  D -- "not found" --> R["Send now"]
-  D -- "check failed" --> Q["Mark needs_check: user can Retry send"]
+  C -- "yes" --> D["IMAP: search the sender's Ethereal INBOX for the Message-ID"]
+  D -- "found" --> S["Mark sent (audit delivery_checked)"]
+  D -- "not found, claimed under 1h ago" --> R["Send now"]
+  D -- "check failed, or claimed over 1h ago" --> Q["Mark needs_check: user can Retry send"]
 ```
 
 - Every email is sent with `Message-ID: <email.id@reachinbox.local>` (one line in the nodemailer call).
 - The check runs inside BullMQ's own stalled-job retry, so no sweeper is needed.
-- **"Needs check"** rows show an amber badge. `POST /api/emails/:id/retry` re-queues them with a new job ID (`<id>-retry-<n>`), and the click is audited as `retry_requested`.
+- **1-hour rule:** Ethereal keeps messages for "a few hours" ([live-tested](./references.md#ethereal)), so "not found" only proves "never sent" when the attempt (`claimedAt`) is under an hour old. "Found" is trusted at any age.
+- **"Needs check"** rows show an amber badge. Retry send (`POST /api/emails/:id/retry`) runs the same check first:
+  - found: marked `sent`, nothing is sent again (`delivery_checked`)
+  - not found, recent: re-queued with a new job ID (`<id>-retry-<n>`), audited as `retry_requested` with the check result
+  - can't tell: `409 delivery_unknown`. The UI shows the reason and the risk of a second copy, with a "Send anyway" button (`force: true`)
+- **No SMTP reply** parks as `needs_check` without a check, because Ethereal may still be storing the message. The check runs when the user clicks Retry.
 - The same approach works in production with Gmail's API (`rfc822msgid:` search) or with delivery webhooks from email services.
 - **Remaining risk:** a worker that is frozen but not dead (longer than its lock) could finish sending while the check runs. Rare and documented. If it does, its `sent` result still lands (that write also accepts `needs_check`), so the only gap left is a user clicking Retry send before then.
 

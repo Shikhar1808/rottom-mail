@@ -31,8 +31,8 @@ See [01 · Architecture](./01-architecture.md#data-model-prisma-planned). Fields
 | `deferred_rate_limit` | mode, count, limit, window, new time |
 | `queue_paused` (global mode) | paused until |
 | `skipped_duplicate` | a second claim lost the race: **visible proof that idempotency works** |
-| `stalled_recovered` | crash check result: found at the server or not |
-| `needs_check` / `retry_requested` | reason / which user |
+| `delivery_checked` | Option C mailbox check: `found` / `not_found` and why, after a crash or on Retry send |
+| `needs_check` / `retry_requested` | reason / which user, and the mailbox check result on Retry |
 | `slack_notified` / `slack_skipped` / `slack_failed` | HTTP status, channel, or "not connected" |
 | `slack_connected` / `slack_disconnected` / `slack_broken` | team, channel, error |
 | `sender_created` / `sender_broken` | sender email, reason |

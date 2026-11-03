@@ -262,18 +262,25 @@ Caddyfile                   HTTPS + static frontend + /api /auth /admin → api:
 backend/
   prisma/schema.prisma
   eslint.config.mjs         no-cron guard (see 03)
-  src/config.ts             zod-parsed env
-  src/server.ts             express app, routes, bull-board, startup repair
-  src/worker.ts             starts the workers listed in WORKER_QUEUES
-  src/routes/               auth, senders, campaigns, emails, slack
-  src/services/             updateEmail (audit + version + sync), mailer, limiters/{global,perSender}.ts,
-                            slack, search, crypto, ethereal
-  src/middleware/           requireAuth, originCheck
+  src/app.ts                express app: middleware, routes, Bull Board, error handler
+  src/server.ts             API entry: listen, startup repair, ES index, graceful shutdown
+  src/config/env.ts         zod-parsed env
+  src/lib/                  db (Prisma), redis, queues (BullMQ queues + job types)
+  src/middleware/           originCheck, requireAuth
+  src/routes/               auth, senders, campaigns, emails (tabs, search, history, retry), slack
+  src/services/             emails (updateEmail: audit + version + sync), limiter (both modes), scheduler (enqueue,
+                            startup repair), campaigns, senders, session, mailer, slack (messages), search, plan
+  src/workers/              index (worker entry, WORKER_QUEUES), emailWorker, notificationsWorker, searchSyncWorker
+  src/utils/                crypto (AES-256-GCM), errors (HttpError), helpers (sleep, chunk)
+  src/types/express.d.ts    req.userId
+  src/scripts/              dev-session, dev-slack-webhook (dev only)
+  tests/unit/               crypto, plan (no Docker needed)
+  tests/integration/        delivery, limiter, oauth-state, search, slack (need docker compose up)
 frontend/
-  src/api/                  client.ts (fetch with credentials), types.ts
-  src/components/ui/        Button, Input, Textarea, Modal, Table, Tabs, Spinner, EmptyState, Badge
-  src/components/           Header, EmailTable (shared by both tabs), ComposeForm, SlackButton, SearchBar, HistoryDrawer
-  src/hooks/                useMe, useEmails, useSearch, useSchedule, useSlack
-  src/lib/extractEmails.ts  regex + Set dedupe (CSV and txt)
+  vite.config.ts            https when the mkcert files exist; proxy /api /auth /admin → :4000 (one origin)
+  src/api/                  client.ts (fetch + ApiError), types.ts, hooks.ts (TanStack Query: useMe, useEmails, useSearch...)
+  src/components/ui.tsx     Button, Field, StatusBadge, Spinner, EmptyState (dialogs are the native <dialog>)
+  src/components/           Header, SlackButton, EmailTable (both tabs + search results), HistoryDialog
+  src/lib/                  extractEmails.ts (regex + Set dedupe, CSV and txt), format.ts (times)
   src/pages/                Login, Dashboard, Compose
 ```

@@ -48,7 +48,8 @@ Sources fetched during the design discussion (2026-11-02), what each one support
 
 | Source | Used for | Key data |
 |---|---|---|
-| [Ethereal FAQ](https://ethereal.email/faq) | Senders, limits, retention | Accounts via `nodemailer.createTestAccount()` or one click, "no signup and no verification". "Nothing is actually delivered". "Messages are stored for a few hours". **100MB** quota. **Public accounts: up to 200 messages per hour**, then temporarily rejected until the next hour. Public accounts can't receive inbound mail |
+| [Ethereal FAQ](https://ethereal.email/faq) | Senders, limits, retention | Accounts via `nodemailer.createTestAccount()` or one click, "no signup and no verification". "Nothing is actually delivered". "Messages are stored for a few hours". "All messages, both sent and received, can be found in the INBOX folder". **100MB** quota. **Public accounts: up to 200 messages per hour**, then temporarily rejected until the next hour. Public accounts can't receive inbound mail |
+| Live IMAP test, 2026-11-03 (`imap.ethereal.email:993`, one of the app's sender mailboxes) | Option C crash check | Folders: INBOX, Drafts, Junk, Sent Mail, Trash. Three test sends landed in **INBOX** (Sent Mail stayed empty), each found by `SEARCH HEADER Message-ID` on the first search, about 1.3s after the SMTP `250` (mostly network round trips). A made-up Message-ID matched nothing. The id is stored as sent (nodemailer folds it onto a second header line, and search still matches). The search is a substring match, so the id with or without `<>` works. The app's emails from 10.7h and 14.6h earlier were gone from IMAP, and their preview links returned 404 |
 
 ## Not fetched this session (library docs / general knowledge, check while building)
 
@@ -74,7 +75,7 @@ Sources fetched during the design discussion (2026-11-02), what each one support
 ## Still unverified (confirm during the build)
 
 - [ ] Slack accepts `https://localhost` redirect URLs (else use a tunnel)
-- [ ] Which Ethereal IMAP folder holds caught messages, and whether `SEARCH HEADER Message-ID` works there
+- [x] Which Ethereal IMAP folder holds caught messages, and whether `SEARCH HEADER Message-ID` works there. **INBOX, and yes** (live test above). Messages are deleted after a few hours, so "not found" only means "not sent" for a recent send
 - [ ] Slack webhook error ↔ HTTP status mapping (we classify by error string anyway)
 - [ ] `oauth.v2.access` response fields `incoming_webhook.{url, channel, channel_id, configuration_url}` (not on the fetched page)
 - [ ] BullMQ `RateLimitError` keeps the job's place in line (test it)

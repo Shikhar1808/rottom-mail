@@ -274,17 +274,17 @@ limit reached (atomic counter: count == limit)  →  notifications job (jobId sl
 |---|---|
 | Right after connecting | ✅ *ReachInbox connected.* Rate-limit alerts for your senders will appear in #email-alerts. |
 | Per-sender mode: a sender reaches its limit | the alert below, once per sender per window |
-| Global mode: the system limit is reached | ⚠️ *System hourly limit reached:* 200/200 across all senders. Queue paused until 15:00. Sent once per window, to the owner of the email that reached it |
+| Global mode: the system limit is reached | ⚠️ *System limit reached* (200 per hour across all senders). Queue paused until 15:00. Sent once per window, to the owner of the email that reached it |
 
 ```json
 {
-  "text": "⚠️ Hourly limit reached for alice@ethereal.email (200/200). Sending resumes at 15:00 UTC.",
+  "text": "⚠️ Limit reached for alice@ethereal.email (200 per hour). Sending resumes at 15:00 UTC.",
   "blocks": [
-    { "type": "header", "text": { "type": "plain_text", "text": "⚠️ Hourly limit reached" } },
+    { "type": "header", "text": { "type": "plain_text", "text": "⚠️ Sender limit reached" } },
     { "type": "section", "fields": [
       { "type": "mrkdwn", "text": "*Sender*\nalice@ethereal.email" },
-      { "type": "mrkdwn", "text": "*Limit*\n200 / hour" },
-      { "type": "mrkdwn", "text": "*Moved to next window*\n37 emails" },
+      { "type": "mrkdwn", "text": "*Limit*\n200 per hour" },
+      { "type": "mrkdwn", "text": "*Still queued*\n37 emails" },
       { "type": "mrkdwn", "text": "*Resumes*\n<!date^1730556000^{time}|15:00 UTC>" } ] },
     { "type": "context", "elements": [ { "type": "mrkdwn",
       "text": "Campaign: Q4 pricing outreach · per-sender mode · <https://rottom.your-domain.com/dashboard|Open dashboard>" } ] }
@@ -293,7 +293,8 @@ limit reached (atomic counter: count == limit)  →  notifications job (jobId sl
 ```
 
 - **`text`:** the plain fallback, used in phone notifications.
-- **"37 emails":** one count query at the moment of the hit.
+- **"Still queued":** that sender's emails still waiting, counted when the alert is sent (in global mode: only the user's own, never other users' numbers).
+- **The window is named as configured:** "200 per hour" in production, "5 per minute" with the 60s demo window.
 - **`<!date^…>`:** shows each reader's own timezone.
 - **Dashboard link:** a plain text link, not a button (a button would need Slack's interactivity settings).
 - **Escaping:** `&`, `<` and `>` are escaped in user text, so a subject like `<!channel>` can't ping everyone.

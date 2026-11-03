@@ -18,6 +18,7 @@ Every bug found in the backend so far, what it could have done, and what changed
 | 10 | Limits and window must be above 0 | All sending stopping silently on a wrong setting | Review 2 | `78cda1f` | — |
 | 11 | A sender's next free slot is kept until it has passed | Two campaigns from one sender sending seconds apart | Review 2 | `78cda1f` | ✅ |
 | 12 | Tests are linted again | Dead code collecting in the tests | Review 2 | `78cda1f` | — |
+| 13 | Mailbox check before resending (Option C) | A second copy after a crash or a Retry click | Frontend review | `6abeb00` | ✅ |
 
 All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 
@@ -36,8 +37,8 @@ All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 
 - **Problem:** When a send failed without an SMTP reply code (such as 250 or 550), the worker put the row back to `scheduled` and the email was sent again. But the connection can drop after Ethereal has accepted the message and before its "250 OK" arrives. Nodemailer reports both cases with the same error, so the retry could deliver a second copy.
 - **Fix:** No reply code now means "delivery unknown". The row goes to `needs_check`, the same as after a worker crash ([docs/03](./03-scheduling-persistence.md)). The user decides whether to retry.
-- **Trade-off:** If Ethereal itself is down, emails wait in "Needs check" instead of retrying on their own, until the Option C crash check is built.
-- **Where:** `backend/src/workers/emailWorker.ts:81`
+- **Trade-off:** If Ethereal itself is down, emails wait in "Needs check" instead of retrying on their own. Retry send checks the mailbox first (fix 13).
+- **Where:** `backend/src/workers/emailWorker.ts:82`
 - **Test:** `delivery.test.ts` › "5xx fails, 4xx moves to the next window, no SMTP reply parks as needs_check"
 
 ### 3. Submitting the same campaign twice sent every email twice
@@ -47,7 +48,7 @@ All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
   - The Compose form makes the campaign id once, when it opens, and sends it with the request.
   - The server inserts the campaign with `ON CONFLICT DO NOTHING` (Prisma `createMany` with `skipDuplicates`). A second submit waits for the first, adds nothing, and gets back what the first one created.
   - An id that belongs to another user returns `409`.
-- **Where:** `backend/src/services/campaigns.ts:47-63, 92-103`, `frontend/src/pages/Compose.tsx:14`
+- **Where:** `backend/src/services/campaigns.ts:47-63, 92-103`, `frontend/src/pages/Compose.tsx:15`
 - **Test:** `delivery.test.ts` › "the same form submitted twice at once creates one campaign"
 
 ### 4. A late "sent" result was thrown away
@@ -71,7 +72,7 @@ All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 
 - **Problem:** `retry_requested` showed an empty "from" in the email timeline, because Retry accepts two starting states (`failed` and `needs_check`).
 - **Fix:** The event now stores `fromStatus: email.status`.
-- **Where:** `backend/src/routes/emails.ts:77`
+- **Where:** `backend/src/services/emails.ts:88`
 
 ## Found during live testing (fixed in `c18a2f4`)
 
@@ -120,8 +121,21 @@ All 23 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 - **Fix:** ESLint covers `tests/**/*.ts`, and `npm run lint` runs `eslint src tests`. `npm run build` still lints only `src`, so a Docker build without the tests folder keeps working.
 - **Where:** `backend/eslint.config.mjs:8`, `backend/package.json:13`
 
+## Frontend review (fixed in `6abeb00`)
+
+### 13. "Retry send" on a "Needs check" email could deliver a second copy
+
+- **Problem:** "Needs check" means the send may or may not have gone out (a worker crash mid-send, or no SMTP reply). The crash path parked these without looking, and Retry send queued them again without looking. If the first try had reached Ethereal, the lead got the email twice.
+- **Fix:** the Option C check ([docs/03](./03-scheduling-persistence.md)). It searches the sender's Ethereal INBOX over IMAP for the email's fixed Message-ID, and runs in the crash path and on Retry send:
+  - found: marked `sent`, nothing is sent again
+  - not found, and the attempt is under an hour old: sent now
+  - otherwise it can't tell, because Ethereal deletes messages after a few hours. After a crash the row becomes `needs_check`. On Retry the server answers `409 delivery_unknown`, and the UI shows the risk with a "Send anyway" button
+- **Checked:** live against Ethereal ([references](./references.md#ethereal)). Caught messages are in INBOX and found on the first search. A made-up id isn't found, and a wrong password counts as "can't tell", never "not sent". In the browser, Retry on an email that had really gone out marked it sent; on a 2-hour-old one it asked first. Each check takes about 6 seconds (a fresh IMAP login).
+- **Where:** `backend/src/services/mailer.ts` (`findInMailbox`), `backend/src/services/emails.ts` (`checkDelivery`, `retryEmail`), `backend/src/workers/emailWorker.ts` (`recoverAfterCrash`), `frontend/src/components/EmailTable.tsx`
+- **Test:** `delivery.test.ts` › "after a crash mid-send it checks the mailbox…", and the two `retryEmail` tests. Both fail if "not found" is trusted at any age.
+
 ## Known and not fixed
 
 - **SMTP 4xx has no cap on deferrals.** A 4xx reply moves the email to the next window without using a try, so a sender that always answers 4xx is deferred forever. It's marked with a `shortcut:` comment in `emailWorker.ts`.
-- **"Needs check" emails wait for the user.** The Option C crash check (match the fixed Message-ID over IMAP) isn't built, so a `needs_check` email is only sent again when someone clicks Retry ([docs/10](./10-timeline.md)).
+- **Some "Needs check" emails still need a person.** When the mailbox check can't tell (the attempt is over an hour old, or IMAP is down), Retry asks before sending again. An email with no SMTP reply is parked without an automatic check; the check runs when someone clicks Retry. It's marked with a `shortcut:` comment in `emailWorker.ts`.
 - **Bull Board shows every user's jobs**, not only your own. It is read-only and behind login (D21 in [docs/02](./02-design-decisions.md)).

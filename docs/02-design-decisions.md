@@ -147,16 +147,16 @@ Every decision made during the design discussion. Each one records the options w
   - A: manual "Retry send" for stuck rows
   - B: automatic check before resending
   - **C: B, with A as the fallback**
-- **How C works:** every send uses a fixed `Message-ID: <email.id@reachinbox.local>`. If a job finds its row already `sending` (a crash), it searches the sender's Ethereal mailbox over IMAP for that Message-ID.
-  - **Found:** mark it `sent`.
-  - **Not found:** send it.
-  - **Check fails:** mark it `needs_check`. The user can click Retry send.
+- **How C works:** every send uses a fixed `Message-ID: <email.id@reachinbox.local>`. The check searches the sender's Ethereal INBOX over IMAP for it. It runs when a job finds its row already `sending` (a crash), and when the user clicks Retry send on a `needs_check` email.
+  - **Found:** mark it `sent`. Nothing is sent again.
+  - **Not found, attempt under an hour old:** send it.
+  - **Not found but older, or the check fails:** can't tell, because Ethereal deletes messages after a few hours. After a crash the row becomes `needs_check`. On Retry, the UI spells out the risk of a second copy and sends only if the user clicks "Send anyway".
 - **Why:** a duplicate cold email is worse than a missed one, and the check removes the ambiguity in most cases.
 - **Remaining risk:** a worker that is frozen but still alive could finish its send while the check runs. That's rare, and documented. If it does, its `sent` result still lands (that write also accepts `needs_check`), so the only gap left is a user clicking Retry send before then.
 
 ### D16 · Failure handling and NACK/DLQ ✅
 - **Known failure** (SMTP error): retry with backoff, then the BullMQ `failed` set (that's the DLQ), and the row becomes `failed`.
-- **Unknown outcome** (crash mid-send): stalled-job redelivery runs the Option C check, then `needs_check`.
+- **Unknown outcome** (crash mid-send): stalled-job redelivery runs the Option C check, and the row becomes `needs_check` only if the check can't tell. No SMTP reply parks as `needs_check` straight away, and Retry send runs the check.
 - **Rate limit:** "not now". `DelayedError` / `RateLimitError` don't use up an attempt.
 - **Replays:** go through our audited `POST /api/emails/:id/retry`, not Bull Board.
 - **Details:** [03](./03-scheduling-persistence.md#failure-handling-vs-nack-and-dlq)

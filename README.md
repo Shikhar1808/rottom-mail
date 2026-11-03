@@ -55,9 +55,9 @@ Full detail: [architecture](./docs/01-architecture.md) · [decisions](./docs/02-
 - **200 emails per hour** (`MAX_EMAILS_PER_HOUR_PER_SENDER` / `MAX_EMAILS_PER_HOUR`). Keep the per-sender value ≤ 200: Ethereal itself rejects public accounts above 200/hour.
 - When the limit is reached, jobs move to the **next window in arrival order** and are never failed or dropped. Slack gets one message per window. Comparison and trade-offs: [docs/04](./docs/04-rate-limiting.md#side-by-side).
 
-## Run it locally (planned, will be checked against the code)
+## Run it locally
 
-**Needs:** Node 20+, Docker, [`mkcert`](https://github.com/FiloSottile/mkcert). Slack requires HTTPS redirect URLs, so only the Vite dev server uses HTTPS; Express stays plain HTTP behind its proxy.
+**Needs:** Node 20+, Docker, and [`mkcert`](https://github.com/FiloSottile/mkcert) for Slack. Slack requires HTTPS redirect URLs, so only the Vite dev server uses HTTPS; Express stays plain HTTP behind its proxy. **Without mkcert** Vite serves `http://localhost:5173`: set `APP_URL=http://localhost:5173` in `backend/.env` and everything except the Slack connect flow works.
 
 ```bash
 mkcert -install && mkcert localhost            # localhost.pem + localhost-key.pem in the repo root (git-ignored)
@@ -70,10 +70,11 @@ npx prisma migrate dev
 npm run dev:api                                # http://localhost:4000 (private; reached via the Vite proxy)
 npm run dev:worker                             # emails + search-sync + notifications workers
 npm run dev:session                            # dev only: prints a session cookie for curl (before Google login)
+npm run dev:slack-webhook <hooks.slack.com URL> # dev only: alerts to a plain Slack webhook (before the Slack app)
 
 cd ../frontend
 npm install
-npm run dev                                    # https://localhost:5173  (Bull Board: /admin/queues)
+npm run dev                                    # https://localhost:5173 (http without mkcert). Bull Board: /admin/queues
 ```
 
 ### Environment

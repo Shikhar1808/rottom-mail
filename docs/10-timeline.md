@@ -38,53 +38,56 @@
 **Block C: first check (1h)**
 - [x] P0 Schedule 5 emails 1 min ahead via curl (`npm run dev:session` cookie). All sent through Ethereal with preview links; duplicate lead merged; audit trail scheduled → claimed → sent
 - [x] P0 Restart test: scheduled +2 min, killed API + worker, restarted Redis (3 delayed jobs survived), restarted API (repair) + 2 workers. Each sent exactly once
-- [x] P1 Review fixes: 8 tries + repair replaces dead jobs, no SMTP reply → `needs_check`, late `sent` still recorded, `campaignId` from the form (resubmit-safe). `src/delivery.test.ts` covers the race, SMTP replies, late sent, repair and double submit
+- [x] P1 Review fixes: 8 tries + repair replaces dead jobs, no SMTP reply → `needs_check`, late `sent` still recorded, `campaignId` from the form (resubmit-safe). `tests/integration/delivery.test.ts` covers the race, SMTP replies, late sent, repair and double submit
 
 ## Day 2 (Tue 11-03, morning): limits, auth, Slack, search (~6h)
 
-**Block D: rate limiting (2h)**
-- [ ] P0 Per-sender: `reserveSlot` Lua, book-and-step-aside, overflow to the next window, `hitLimit`
-- [ ] P0 Global: BullMQ limiter + hourly counter + `worker.rateLimit()` + `RateLimitError`
-- [ ] P0 `RATE_LIMIT_MODE` switch, `RATE_LIMIT_WINDOW_MS` for the demo
-- [ ] P1 SMTP replies: 4xx → next window (`smtp_deferred`), 5xx → failed, 535 → sender broken
-- [ ] P1 vitest: limiter spacing / limit once / order / parallel callers
+**Block D: rate limiting (2h)** ✅ done
+- [x] P0 Per-sender: `reserveSlot` Lua, book-and-step-aside, overflow to the next window, `hitLimit`. Live run (15 leads, cap 5, 60s window, `SMTP_MODE=fake`): 5 per window, 2s apart, same order every window, one alert job per window
+- [x] P0 Global: BullMQ limiter + hourly counter + `queue.rateLimit()` + `RateLimitError`. Live run: gaps between sends 1.93–2.07s, strict order lead01 → lead15, queue paused between windows
+- [x] P0 `RATE_LIMIT_MODE` switch, `RATE_LIMIT_WINDOW_MS` for the demo
+- [x] P1 SMTP replies: 4xx → next window (`smtp_deferred`), 5xx → failed, 535 → sender broken, no reply → `needs_check`
+- [x] P1 vitest: limiter spacing / limit once / order / parallel callers / global gate (`tests/integration/limiter.test.ts`)
+- [x] Found: `localhost` in the DB URL stalls every new Postgres connection ~2s on Windows (IPv6 tried first) and made claims time out in bursts. `.env` uses `127.0.0.1`
 
-**Block E: auth (1.5h)**
-- [ ] P0 Google OAuth (state + PKCE, verify ID token, upsert by `sub`)
-- [ ] P0 Redis sessions, `requireAuth`, `/api/me`, logout
-- [ ] P0 Vite proxy for `/api` `/auth` `/admin` (one origin, no CORS) + `Origin` check middleware
-- [ ] P1 Cookie names/flags follow `APP_URL` (`__Host-sid`, `__Host-g_oauth`, `Secure` on https)
+**Block E: auth (1.5h)** ✅ backend done (real sign-in waits for the Google client ID)
+- [x] P0 Google OAuth (state + PKCE, verify ID token, upsert by `sub`). Checked with a dummy client: redirect has PKCE S256, wrong/missing state → `/login?error=state`, cancel → `error=cancelled`, bad code → `error=google`
+- [x] P0 Redis sessions, `requireAuth`, `/api/me`, logout (audited `login` / `logout`)
+- [x] P0 Vite proxy for `/api` `/auth` `/admin` (one origin, no CORS) + `Origin` check middleware
+- [x] P1 Cookie names/flags follow `APP_URL` (`__Host-sid`, `__Host-g_oauth`, `Secure` on https)
 
 **Block F: Slack (1.5h)**
-- [ ] P0 Connect / callback (single-use state tied to the user, `oauth.v2.access`, encrypted upsert)
-- [ ] P0 `notifications` queue + limit-reached message (Block Kit, escaping, `<!date>`)
-- [ ] P0 Disconnect (`auth.revoke` + delete), skip when not connected, permanent error → broken
-- [ ] P1 "Connected" test message
-- [ ] P1 Dev-only `npm run dev:slack-webhook <url>` to test alerts without OAuth
+- [x] P0 Connect / callback (single-use state tied to the user, `oauth.v2.access`, encrypted upsert). Checked: forged state, another user's state and a reused state all → `?slack=error`; real slack.com rejects a fake code (`invalid_code`)
+- [x] P0 `notifications` queue + limit-reached message (Block Kit, escaping, `<!date>`)
+- [x] P0 Disconnect (`auth.revoke` + delete), skip when not connected, permanent error → broken. Checked: a made-up webhook got Slack's `404 no_team` → marked broken
+- [x] P1 "Connected" test message
+- [x] P1 Dev-only `npm run dev:slack-webhook <url>` to test alerts without OAuth
+- [ ] P0 A real message in a real channel (needs the Slack app or a real webhook URL)
 
 **Block G: search (1h)**
-- [ ] P0 Index mapping on boot, `search-sync` worker (version_type external, 409 = ok), campaign bulk job
-- [ ] P0 `GET /api/emails/search`: ES finds IDs, Postgres shows rows
+- [x] P0 Index mapping on boot, `search-sync` worker (version_type external, 409 = ok), campaign bulk job, repair re-queues rows with `indexedVersion < version` (first boot indexed the 68-email backlog, 0 failures)
+- [x] P0 `GET /api/emails/search`: ES finds IDs, Postgres shows rows. Checked: exact address, prefix while typing, typo in a subject, status filter, another user sees nothing, ES stopped → 503 while the tabs still answer
 
 ## Day 2 (Tue 11-03, afternoon): frontend (~4h)
 
-- [ ] P0 Vite + React + Tailwind + Router + TanStack Query setup, `api/client.ts` (credentials), types
-- [ ] P0 UI kit: Button, Input, Textarea, Modal, Table, Tabs, Spinner, EmptyState, Badge, toasts
-- [ ] P0 Login page (Continue with Google, error toasts)
-- [ ] P0 Header: avatar (no-referrer, initials fallback), name, email, logout
-- [ ] P0 Dashboard: Scheduled / Sent tabs, shared `EmailTable`, loading + empty states, 5s polling
-- [ ] P0 Compose (makes `campaignId = crypto.randomUUID()` when opened, a new one after each Schedule): From dropdown, subject, body, CSV/txt upload → `extractEmails` count, start time, delay, hourly limit, Schedule
-- [ ] P0 Slack button (connect / connected / reconnect) + `?slack=` toasts
-- [ ] P0 Search bar → results table
-- [ ] P1 "Needs check" badge + Retry send button
-- [ ] P2 History drawer (audit timeline)
-- [ ] P2 Pixel-match the Figma
+- [x] P0 Vite + React + Tailwind + Router + TanStack Query setup, `api/client.ts`, types
+- [x] P0 UI kit (`components/ui.tsx`: Button, Field, StatusBadge, Spinner, EmptyState; native `<dialog>`; sonner toasts)
+- [x] P0 Login page (Continue with Google, error toasts) + a dev-only "Dev login" (`DEV_LOGIN=true`)
+- [x] P0 Header: avatar (no-referrer, initials fallback), name, email, logout
+- [x] P0 Dashboard: Scheduled / Sent tabs, shared `EmailTable`, loading + empty states, 5s polling
+- [x] P0 Compose (makes `campaignId = crypto.randomUUID()` when opened): From dropdown, subject, body, CSV/txt upload → `extractEmails` count, start time, delay, hourly limit, Schedule
+- [x] P0 Slack button (connect / connected / reconnect) + `?slack=` toasts
+- [x] P0 Search bar → results table
+- [x] P1 "Needs check" badge + Retry send button
+- [x] P2 History (audit timeline) as a dialog
+- [ ] P2 Pixel-match the Figma (no Figma link yet)
+- [x] Checked in headless Chrome at desktop and phone width: dev login → tabs → search → history → Compose with a CSV (duplicate + upper-case address merged) → 3 real Ethereal sends with preview links
 
 ## Day 2 (Tue 11-03, evening): hardening, docs, video, submit (~3h)
 
-- [ ] P1 Option C crash check: IMAP Message-ID search in the stalled path, `needs_check` fallback
+- [x] P1 Option C check: IMAP Message-ID search in INBOX (live-tested), in the crash path and on Retry send. "Not found" is trusted only under 1 hour; otherwise `needs_check`, and Retry asks before "Send anyway"
 - [ ] P1 `SMTP_MODE=fake` + load script (1000 leads), run both modes, record numbers
-- [ ] P1 vitest: `extractEmails` (same job twice sends once: done in `src/delivery.test.ts`)
+- [ ] P1 vitest: `extractEmails` (same job twice sends once: done in `tests/integration/delivery.test.ts`)
 - [ ] P0 README: check every run command against the real code, fill in the measured numbers, link the video
 - [ ] P0 Record the demo video (script below)
 - [ ] P0 Submit (checklist below)
@@ -110,7 +113,7 @@
 
 1. P2 AWS deployment and the mkcert replacement (the assignment only needs local + video)
 2. P2 Figma pixel-matching, then the history drawer
-3. P1 Option C IMAP check (keep `needs_check` visible + Retry send)
+3. ~~P1 Option C IMAP check~~ (done)
 4. P1 load script numbers (keep `SMTP_MODE=fake` and explain the expected behaviour)
 5. P1 extra tests (keep the limiter tests)
 6. **Never cut:** anything P0, encryption of secrets, `Origin` check, the no-cron guard

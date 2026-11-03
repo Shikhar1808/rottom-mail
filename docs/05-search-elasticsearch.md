@@ -45,24 +45,30 @@ search-sync worker ──3. read the LATEST row (joined with campaign + sender)
 | Field | Type | Use |
 |---|---|---|
 | `userId`, `campaignId`, `status`, `senderEmail` | `keyword` | exact filters |
-| `toEmail` | `text` + `keyword` subfield | search "john" finds `john@acme.com` |
+| `toEmail` | `text` (pattern analyzer splitting on non-letters/digits) + `keyword` subfield | "john" or "acme" finds `john@acme.com` |
 | `subject`, `body` | `text` | full-text search |
 | `scheduledAt`, `sentAt` | `date` | sort / range |
 
 ## Search: "ES finds, Postgres shows"
 
 ```ts
-const res = await es.search({ index: 'emails', size: 50, query: { bool: {
+const res = await es.search({ index: 'emails', size: 50, _source: false, query: { bool: {
   filter: [{ term: { userId } }, ...(status ? [{ term: { status } }] : [])],   // userId from the session only
-  must:   [{ multi_match: { query: q, fields: ['toEmail', 'subject^2', 'body'], fuzziness: 'AUTO' } }],
+  must: { bool: { minimum_should_match: 1, should: [
+    { multi_match: { query: q, fields: ['subject^2', 'body'], fuzziness: 'AUTO', operator: 'and' } }, // typos OK
+    { match: { toEmail: { query: q, operator: 'and', boost: 2 } } },                                  // exact words
+    { multi_match: { query: q, type: 'bool_prefix', fields: ['toEmail', 'subject'], operator: 'and' } }, // while typing
+  ] } },
 }}, sort: ['_score', { scheduledAt: 'desc' }] });
 
 const ids  = res.hits.hits.map(h => h._id);
-const rows = await prisma.email.findMany({ where: { id: { in: ids }, userId } });   // second userId check
+const rows = await prisma.email.findMany({ where: { id: { in: ids }, userId, ...(status && { status }) } }); // second check
 const byId = new Map(rows.map(r => [r.id, r]));
 return ids.map(id => byId.get(id)).filter(Boolean);                                // keep ES ranking
 ```
 
+- **Tuned on real data:** `operator: 'and'` so `lead07@example.com` doesn't return every `@example.com` email, and no typo tolerance on addresses, where one digit is the whole difference (`lead07` vs `lead01`). Typos are still forgiven in subjects and bodies (`globl demo` works).
+- **ES down:** the search box gets a 503 ("Search is unavailable right now. The tabs still work.") within about 4s. The client retries once; sync jobs retry through BullMQ.
 - **Statuses in search results are never stale.** The only lag left is that a brand-new email becomes *findable* about 1s later (ES refreshes every 1s by default).
 - **Second security check:** `userId` is enforced in Postgres too.
 - **Cost:** one extra indexed query per search.

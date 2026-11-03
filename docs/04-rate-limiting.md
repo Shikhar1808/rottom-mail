@@ -42,7 +42,7 @@ async function gate(job, token, email) {
 ```
 
 - **Delay:** BullMQ's built-in limiter. It's stored in Redis, so it holds across all workers.
-- **Hourly limit:** one Redis counter per window. When it's full, the **whole queue pauses** until the next window and jobs keep their place in line (to confirm with a test).
+- **Hourly limit:** one Redis counter per window. When it's full, the **whole queue pauses** until the next window and jobs keep their place in line (confirmed: a rate-limited job goes back to the front of the waiting list, and the live run sent lead01 → lead15 in order).
 - About 10 lines, almost all BullMQ built-ins.
 
 ## Implementation 2: per-sender limiter
@@ -158,7 +158,7 @@ Ethereal limits public accounts to **200 messages/hour** (then rejects until the
 | `4xx` (e.g. Ethereal's 200/hr rejection) | temporary | Move to the next window, audit `smtp_deferred`, **don't** use up attempts |
 | `5xx` | permanent | `failed` |
 | `535` auth failure | sender's Ethereal account broken | Sender becomes `broken`, email `failed` with reason, user is told |
-| network / timeout (no reply) | unknown: the server may already have it | `needs_check`, no automatic resend. The Option C check ([03](./03-scheduling-persistence.md#delivery-guarantee-at-most-once--option-c)) will settle these |
+| network / timeout (no reply) | unknown: the server may already have it | `needs_check`, no automatic resend. Retry send runs the Option C check first ([03](./03-scheduling-persistence.md#delivery-guarantee-at-most-once--option-c)) |
 
 ## Demo and test settings
 
@@ -169,3 +169,5 @@ Ethereal limits public accounts to **200 messages/hour** (then rejects until the
   - overflow keeps order
   - two parallel callers never get the same slot
   - global counter: one alert
+- **Measured gap:** BullMQ starts jobs exactly 2s apart; the sends themselves land 1.93–2.07s apart because each job's own work (DB claim, SMTP) takes 10–80ms.
+- **With real Ethereal:** the limiter spaces when each send *starts*. The recorded send time is when Ethereal answered, and the first email of a batch also waits ~2–3s for the SMTP connection, so its time can land right next to the second one (seen: slots :00/:02/:04, recorded :03/:04/:04).
