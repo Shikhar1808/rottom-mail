@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, useSearchParams } from 'react-router';
+import { Link, Navigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useHealth, useMe } from '../api/hooks';
 import { buttonClass } from '../components/ui';
@@ -59,6 +59,11 @@ export function Login() {
         </div>
         {me.isError && <p className="mt-6 text-stamp">The server isn’t answering. Start the API with npm run dev:api, then reload.</p>}
       </main>
+      <footer className="mx-auto w-full max-w-2xl px-6 pb-8 text-sm text-muted">
+        <Link to="/privacy" className="underline">
+          Privacy policy
+        </Link>
+      </footer>
     </div>
   );
 }

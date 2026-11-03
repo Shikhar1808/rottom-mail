@@ -5,11 +5,13 @@ import { Spinner } from './components/ui';
 import { Compose } from './pages/Compose';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
+import { Privacy } from './pages/Privacy';
 
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route element={<SignedIn />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/compose" element={<Compose />} />
