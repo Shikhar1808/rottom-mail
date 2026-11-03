@@ -34,7 +34,7 @@ const toItem = ({ campaign, sender, ...r }: Row) => ({ ...r, subject: campaign.s
 /** List rows plus the start of the message, like an inbox. One query for the few campaigns on a page. */
 async function withPreview(rows: Row[]) {
   const ids = [...new Set(rows.map((r) => r.campaignId))];
-  const campaigns = await prisma.campaign.findMany({ where: { id: { in: ids } }, select: { id: true, body: true } });
+  const campaigns = await prisma.$queryRaw<{ id: string; body: string }[]>`SELECT id, left(body, 400) AS body FROM "Campaign" WHERE id = ANY(${ids}::text[])`;
   const preview = new Map(campaigns.map((c) => [c.id, c.body.replace(/\s+/g, ' ').trim().slice(0, 160)]));
   return rows.map((r) => ({ ...toItem(r), preview: preview.get(r.campaignId) ?? '' }));
 }

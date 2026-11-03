@@ -46,7 +46,7 @@ search-sync worker ──3. read the LATEST row (joined with campaign + sender)
 |---|---|---|
 | `userId`, `campaignId`, `status`, `senderEmail` | `keyword` | exact filters |
 | `toEmail` | `text` (pattern analyzer splitting on non-letters/digits) + `keyword` subfield | "john" or "acme" finds `john@acme.com` |
-| `subject`, `body` | `text` | full-text search |
+| `subject`, `body` | `text` | full-text search. `body` is the first 2,000 characters: every lead gets its own copy, so the whole message × 10,000 leads would fill ES |
 | `scheduledAt`, `sentAt` | `date` | sort / range |
 
 ## Search: "ES finds, Postgres shows"

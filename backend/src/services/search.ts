@@ -67,7 +67,7 @@ export async function syncEmails(ids: string[]) {
           senderEmail: r.sender.email,
           toEmail: r.toEmail,
           subject: r.campaign.subject,
-          body: r.campaign.body,
+          body: r.campaign.body.slice(0, 2000), // every lead gets a copy: the whole message × 10k leads would fill ES
           scheduledAt: r.scheduledAt,
           sentAt: r.sentAt,
         },

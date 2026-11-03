@@ -33,7 +33,7 @@ await prisma.sender.create({ data: {
 | New user logs in | Nothing yet (login never waits on Ethereal) |
 | First time Compose opens (`GET /api/senders`) and the user has **0 active** senders | Create `DEFAULT_SENDERS_PER_USER` (2) mailboxes |
 | Later logins | Same senders reused |
-| "Add sender" (`POST /api/senders`) | One more, up to `MAX_SENDERS_PER_USER` (5) |
+| "+ Add mailbox" next to From in Compose (`POST /api/senders`) | One more, up to `MAX_SENDERS_PER_USER` (5), and it becomes the selected sender |
 | SMTP login fails (`535`) | Sender becomes `broken`. If 0 active remain, 2 new ones are created on the next Compose |
 | Two tabs open Compose at once | Redis lock `SET provision:<userId> NX EX 30`: only one request creates mailboxes, the other waits and then reads them |
 

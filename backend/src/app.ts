@@ -31,7 +31,7 @@ export function createApp() {
   app.use(express.json({ limit: '4mb' })); // ~10k leads, or 2 MB of attachments sent as base64
   app.use(cookieParser());
   // One line per write, error or slow request. Fast, successful reads (the dashboard polls every 5s) and "not signed in"
-  // checks are skipped. The path only: query strings can hold OAuth codes.
+  // checks are skipped. originalUrl, because routers trim req.path; without the query string, which can hold OAuth codes.
   app.use((req, res, next) => {
     const start = performance.now();
     res.on('finish', () => {
@@ -39,7 +39,7 @@ export function createApp() {
       const quiet = req.method === 'GET' && ms < 1000 && (res.statusCode < 400 || res.statusCode === 401);
       if (quiet) return;
       const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-      log[level](`${req.method} ${req.path}`, { status: res.statusCode, ms, userId: req.userId });
+      log[level](`${req.method} ${req.originalUrl.split('?')[0]}`, { status: res.statusCode, ms, userId: req.userId });
     });
     next();
   });
@@ -66,7 +66,7 @@ export function createApp() {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, ...(err.code && { code: err.code }) });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: 'Invalid input', issues: err.issues });
     if (err.status && err.status < 500) return void res.status(err.status).json({ error: err.message }); // e.g. bad JSON
-    log.error('request failed', { method: req.method, path: req.path, userId: req.userId, ...errorFields(err), stack: err.stack });
+    log.error('request failed', { method: req.method, path: req.originalUrl.split('?')[0], userId: req.userId, ...errorFields(err), stack: err.stack });
     res.status(500).json({ error: 'Internal error' });
   });
   return app;

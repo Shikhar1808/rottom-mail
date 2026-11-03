@@ -69,6 +69,11 @@ services:
     <<: *backend
     command: ["node", "dist/server.js"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      start_period: 10s
+      retries: 6
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -94,7 +99,8 @@ services:
     ports: ["80:80", "443:443"]
     volumes: ["caddy-data:/data", "caddy-config:/config"]   # certificates survive restarts
     restart: unless-stopped
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }   # "started" isn't "ready": without this, the first visits after a deploy get a 502
 
 volumes:
   pg-data:

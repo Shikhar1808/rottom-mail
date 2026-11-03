@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from './client';
-import type { AuditEvent, CampaignInput, CampaignResult, Counts, EmailDetail, EmailItem, EmailPage, Me, Sender, SentFilter, Slack } from './types';
+import type { AuditEvent, CampaignInput, CampaignResult, Counts, EmailDetail, EmailItem, EmailPage, EmailStatus, Me, Sender, SentFilter, Slack } from './types';
 
 const POLL_MS = 5000; // the tabs follow sends live
 
@@ -33,16 +33,36 @@ export const useSearch = (q: string) =>
 
 export const useCounts = () => useQuery({ queryKey: ['emails', 'counts'], queryFn: () => api<Counts>('/api/emails/counts'), refetchInterval: POLL_MS });
 
-export const useEmail = (id: string) =>
-  useQuery({ queryKey: ['emails', 'one', id], queryFn: () => api<EmailDetail>(`/api/emails/${id}`), refetchInterval: POLL_MS });
+/** Still waiting or going out, so worth watching. A Retry click refetches everything under 'emails', which restarts the polling. */
+export const isLive = (status?: EmailStatus) => status === 'scheduled' || status === 'sending';
 
-export const useHistory = (emailId: string) =>
-  useQuery({ queryKey: ['emails', 'history', emailId], queryFn: () => api<{ items: AuditEvent[] }>(`/api/emails/${emailId}/events`), refetchInterval: POLL_MS });
+export const useEmail = (id: string) =>
+  useQuery({
+    queryKey: ['emails', 'one', id],
+    queryFn: () => api<EmailDetail>(`/api/emails/${id}`),
+    refetchInterval: (q) => (isLive(q.state.data?.status) ? POLL_MS : false),
+  });
+
+export const useHistory = (emailId: string, live: boolean) =>
+  useQuery({
+    queryKey: ['emails', 'history', emailId],
+    queryFn: () => api<{ items: AuditEvent[] }>(`/api/emails/${emailId}/events`),
+    refetchInterval: live ? POLL_MS : false,
+  });
 
 // The first call creates the user's Ethereal mailboxes, which can take a few seconds.
 export const useSenders = () => useQuery({ queryKey: ['senders'], queryFn: () => api<{ items: Sender[] }>('/api/senders'), staleTime: 60_000 });
 
 export const useSlack = () => useQuery({ queryKey: ['slack'], queryFn: () => api<Slack>('/api/slack') });
+
+/** One more Ethereal mailbox (the server caps how many). Takes a few seconds: Ethereal creates the account. */
+export function useAddSender() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<Sender>('/api/senders', { json: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['senders'] }),
+  });
+}
 
 export function useSchedule() {
   const qc = useQueryClient();

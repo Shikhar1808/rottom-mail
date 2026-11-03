@@ -28,7 +28,7 @@ const login = async (userId: string) => {
   return `${SID}=${sid}`;
 };
 const get = (path: string, cookie = '') => fetch(base + path, { headers: { cookie } });
-const items = async (path: string, cookie: string) => ((await (await get(path, cookie)).json()) as { items: { id: string }[] }).items;
+const items = async (path: string, cookie: string) => ((await (await get(path, cookie)).json()) as { items: { id: string; preview?: string }[] }).items;
 
 beforeAll(async () => {
   server = createApp().listen(0);
@@ -65,7 +65,7 @@ it('only users in ADMIN_EMAILS can open the queue dashboard', async () => {
 describe("a user can't see or touch another user's emails", () => {
   it('list and history', async () => {
     const [asBob, asAlice] = [await login(bob), await login(alice)];
-    expect((await items('/api/emails?tab=sent', asBob)).map((e) => e.id)).toContain(bobsEmail); // so the checks below aren't empty by accident
+    expect((await items('/api/emails?tab=sent', asBob)).find((e) => e.id === bobsEmail)).toMatchObject({ preview: 'b' }); // so the checks below aren't empty by accident
     expect((await items('/api/emails?tab=sent', asAlice)).map((e) => e.id)).not.toContain(bobsEmail);
     expect(await items(`/api/emails/${bobsEmail}/events`, asBob)).toHaveLength(1);
     expect(await items(`/api/emails/${bobsEmail}/events`, asAlice)).toHaveLength(0);
@@ -79,7 +79,8 @@ describe("a user can't see or touch another user's emails", () => {
     expect(await (await get('/api/emails/counts', asAlice)).json()).toEqual({ scheduled: 0, sent: 0 });
   });
 
-  it('retry', async () => {
+  it('retry, and the request log names the full path', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined); // warnings go to stderr
     const res = await fetch(`${base}/api/emails/${bobsEmail}/retry`, {
       method: 'POST',
       headers: { cookie: await login(alice), origin: new URL(env.APP_URL).origin, 'content-type': 'application/json' },
@@ -87,5 +88,10 @@ describe("a user can't see or touch another user's emails", () => {
     });
     expect(res.status).toBe(404);
     expect((await prisma.email.findUniqueOrThrow({ where: { id: bobsEmail } })).status).toBe('failed');
+    // Answered inside the /api/emails mount (no session → 401), where Express has trimmed req.path to "/<id>/retry".
+    await fetch(`${base}/api/emails/${bobsEmail}/retry`, { method: 'POST', headers: { origin: new URL(env.APP_URL).origin, 'content-type': 'application/json' }, body: '{}' });
+    await new Promise((r) => setTimeout(r, 50)); // the log line is written when the response finishes
+    expect(logged.mock.calls.flat().join(' ')).toContain(`POST /api/emails/${bobsEmail}/retry status=401`);
+    logged.mockRestore();
   });
 });

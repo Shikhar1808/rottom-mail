@@ -21,8 +21,10 @@ Every bug found in the backend so far, what it could have done, and what changed
 | 13 | Mailbox check before resending (Option C) | A second copy after a crash or a Retry click | Frontend review | `6abeb00` | ✅ |
 | 14 | Bull Board for admins only | Any user seeing every other user's queue jobs | Opening to the public | `51ef6aa` | ✅ |
 | 15 | Cap on waiting emails per user | One account filling the single server | Opening to the public | `51ef6aa` | ✅ |
+| 16 | Sending a form again re-adds missing jobs | A campaign shown as scheduled that never sends | Ponytail audit | not yet committed | ✅ |
+| 17 | Request log shows the full path | Log lines like `POST /` for every campaign | Ponytail audit | not yet committed | ✅ |
 
-All 30 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
+All 37 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 
 ## Review 1: Day 1 code (fixed in `cfa8ef7`)
 
@@ -151,6 +153,32 @@ All 30 backend tests pass (`npm test` in `backend/`, with `docker compose up`).
 - **Fix:** at most `MAX_PENDING_EMAILS_PER_USER` (20,000) emails waiting (scheduled or sending) per user. A campaign that would go over is refused with 429, and the transaction rolls back, so nothing is saved. A per-user Postgres lock (`pg_advisory_xact_lock`) taken at the start of the transaction makes the count exact. Without it, parallel submits all see the same total and pass together. The check runs after the duplicate check, so resubmitting an accepted form still gets its answer.
 - **Where:** `backend/src/services/campaigns.ts` (`scheduleCampaign`), `backend/src/config/env.ts`
 - **Test:** `delivery.test.ts` › "refuses campaigns over the per-user waiting cap, even two sent at once". It failed 3 times out of 3 without the lock.
+
+## Ponytail audit (not yet committed)
+
+A whole-repo audit on 2026-11-03. Two bugs, plus smaller fixes.
+
+### 16. A resubmitted campaign could say "scheduled" and never send
+
+- **Problem:** Submitting the same form twice returns the first campaign instead of making a second one. But if the first submit saved the rows and then failed while queueing them (Redis blipped), the user's second click took that path and reported success without adding the missing jobs. Those emails waited until the next API restart.
+- **Fix:** That path now re-adds the jobs for the campaign's scheduled rows. Jobs that exist are left alone (job id = email id).
+- **Where:** `backend/src/services/campaigns.ts` (`scheduleCampaign`)
+- **Test:** `delivery.test.ts` › "sending the form again adds the jobs a failed first submit never queued". It fails without the fix.
+
+### 17. The request log showed the wrong path
+
+- **Problem:** Inside a router, Express trims `req.path` to the part after the mount point, so `POST /api/campaigns` was logged as `POST /`.
+- **Fix:** Log `req.originalUrl` without its query string (which can hold OAuth codes), in the request log and the error handler.
+- **Where:** `backend/src/app.ts`
+- **Test:** `access.test.ts` › "retry, and the request log names the full path". It fails without the fix.
+
+### Smaller fixes from the same audit
+
+- **Search copy:** each email's search document keeps the first 2,000 characters of the message, not all of it ([05](./05-search-elasticsearch.md)).
+- **List previews:** Postgres cuts the message (`left(body, 400)`), so a page no longer loads whole messages every 5 seconds.
+- **Production compose:** the API has a health check, and Caddy waits for it, so the first visits after a deploy don't get a 502.
+- **Docs:** the security checklist no longer claims a "JSON-only" rule the code doesn't have ([06](./06-auth-slack.md#security-checklist)).
+- **Frontend:** "+ Add mailbox" next to From uses `POST /api/senders`, which had no button. The email page and its history refresh only while the email is waiting or sending.
 
 ## Known and not fixed
 

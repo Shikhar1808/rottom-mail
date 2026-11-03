@@ -202,6 +202,15 @@ describe('scheduleCampaign', () => {
     expect(sent.attachments[0].content.toString()).toBe('xxxxx');
   });
 
+  it('sending the form again adds the jobs a failed first submit never queued', async () => {
+    const input = form([`${crypto.randomUUID()}@test.local`, `${crypto.randomUUID()}@test.local`]);
+    vi.spyOn(emailQueue, 'addBulk').mockRejectedValueOnce(new Error('redis down')); // rows saved, queueing fails
+    await expect(scheduleCampaign(userId, input)).rejects.toThrow('redis down');
+    expect(await scheduleCampaign(userId, input)).toMatchObject({ count: 2 }); // the user clicks Send again
+    const rows = await prisma.email.findMany({ where: { campaignId: input.campaignId } });
+    expect(await Promise.all(rows.map(async (r) => Boolean(await emailQueue.getJob(r.id))))).toEqual([true, true]);
+  });
+
   it('refuses a 4th attachment or more than 2 MB in total', () => {
     const ok = (attachments: object[]) => CampaignInput.safeParse(raw(['a@test.local'], { attachments })).success;
     expect(ok([file(1), file(1), file(1)])).toBe(true);

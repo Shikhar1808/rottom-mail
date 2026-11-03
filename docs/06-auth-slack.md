@@ -319,7 +319,7 @@ Login asks for no mail permission. Sending through Gmail needs the `gmail.send` 
 - [ ] Sessions: random 256-bit ID, Redis TTL 7d, `__Host-` + `HttpOnly; Secure; SameSite=Lax; Path=/` on https, logout deletes the key
 - [ ] Slack `state`: random, single use (`GETDEL`), 10 min, must match the session user
 - [ ] Webhook URL, Slack token and Ethereal passwords encrypted (AES-256-GCM, `node:crypto`, `ENCRYPTION_KEY`), never returned or logged
-- [ ] One origin, no CORS. `Origin` check + JSON-only on writes
+- [ ] One origin, no CORS. `Origin` check on writes, plus `SameSite=Lax` cookies
 - [ ] Only Caddy :443 public. Express, workers and databases private ([11](./11-deployment-aws.md))
 - [ ] Redirects built from env, no `?next=`
 - [ ] Every query filtered by `userId` from the session (including the second check in ES search)

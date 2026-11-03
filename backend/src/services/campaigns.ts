@@ -135,6 +135,9 @@ export async function scheduleCampaign(userId: string, input: CampaignInput) {
       _max: { scheduledAt: true },
     });
     if (!agg._count) throw new HttpError(409, 'Campaign id already used');
+    // The first submit may have saved the rows and then failed while queueing them (e.g. Redis blipped), so the user
+    // sends again: add any missing jobs. Jobs that exist are left alone (jobId = email id).
+    await enqueueEmails(await prisma.email.findMany({ where: { campaignId, userId, status: 'scheduled' }, select: { id: true, scheduledAt: true } }));
     const { _count: count, _min, _max } = agg;
     return { campaignId, count, duplicatesRemoved: input.leads.length - count, firstSendAt: _min.scheduledAt, lastSendAt: _max.scheduledAt };
   }

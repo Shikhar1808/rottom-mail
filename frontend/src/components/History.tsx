@@ -29,8 +29,8 @@ function detail(e: AuditEvent) {
 }
 
 /** One email's audit trail, oldest first. */
-export function History({ emailId }: { emailId: string }) {
-  const history = useHistory(emailId);
+export function History({ emailId, live }: { emailId: string; live: boolean }) {
+  const history = useHistory(emailId, live);
   if (history.isPending) return <Spinner label="Loading history" />;
   if (history.isError) return <p className="text-sm text-stamp">Couldn’t load the history: {history.error.message}</p>;
   return (

@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { useHealth, useSchedule, useSenders } from '../api/hooks';
+import { useAddSender, useHealth, useSchedule, useSenders } from '../api/hooks';
 import { Editor } from '../components/Editor';
 import { ArrowLeftIcon, ClockIcon, FileIcon, PaperclipIcon, UploadIcon, XIcon } from '../components/icons';
 import { Button, IconButton, menuItemClass, Spinner, useDismiss } from '../components/ui';
@@ -26,6 +26,7 @@ const toBase64 = (file: File) =>
 export function Compose() {
   const navigate = useNavigate();
   const senders = useSenders();
+  const addSender = useAddSender();
   const schedule = useSchedule();
   const per = useHealth().data?.limitWindow ?? 'hour'; // "minute" when the demo shortens the limit window
   // Made once per form: if the same form is submitted twice (double-click, retry after an error), the server keeps one campaign.
@@ -138,6 +139,24 @@ export function Compose() {
                 </option>
               ))}
             </select>
+          )}
+          {senders.isSuccess && (
+            <button
+              type="button"
+              disabled={addSender.isPending}
+              onClick={() =>
+                addSender.mutate(undefined, {
+                  onSuccess: (s) => {
+                    setSenderId(s.id);
+                    toast.success(`Added ${s.email} and picked it as the sender.`);
+                  },
+                  onError: (err) => toast.error(err.message), // e.g. "You can have at most 5 senders"
+                })
+              }
+              className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-brand hover:bg-brand-soft disabled:opacity-50"
+            >
+              {addSender.isPending ? 'Adding…' : '+ Add mailbox'}
+            </button>
           )}
         </Row>
 

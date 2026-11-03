@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { useEmail, useMe } from '../api/hooks';
+import { isLive, useEmail, useMe } from '../api/hooks';
 import { canRetry, useRetryEmail } from '../components/EmailList';
 import { History } from '../components/History';
 import { ArrowLeftIcon, FileIcon } from '../components/icons';
@@ -90,7 +90,7 @@ export function EmailView() {
             <h2 id="history" className="mb-4 text-sm font-semibold">
               History
             </h2>
-            <History emailId={e.id} />
+            <History emailId={e.id} live={isLive(e.status)} />
           </section>
         </main>
       )}
