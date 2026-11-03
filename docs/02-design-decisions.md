@@ -29,7 +29,7 @@ Every decision made during the design discussion. Each one records the options w
 | D21 | Bull Board | Read-only, admins only, keeps recent completed jobs | ✅ |
 | D22 | Scaling | Workers per queue, graceful shutdown, `SMTP_MODE=fake` for load tests | ✅ |
 | D23 | Ethereal's own limit | Not relied on: our Redis limiter first, Ethereal's 4xx as a backstop | ✅ |
-| D24 | Deployment | Single EC2 + Docker Compose + Caddy, after the local demo | 🟡 |
+| D24 | Deployment | Single EC2 + Docker Compose + Caddy, live at `rottom.outbox.shikharsaxena.space` | ✅ |
 | D25 | Cookie names | `__Host-` prefix when served over https | 🟡 |
 | D26 | Open to the public | Own data only, admin-only Bull Board, per-user waiting cap, privacy page | ✅ |
 | D27 | UI | The Figma's layout and green, plus our own touch: pixel ROTTOM wordmark and airmail edge | ✅ |
@@ -57,7 +57,7 @@ Every decision made during the design discussion. Each one records the options w
   1. **one origin**, with a proxy routing paths to the API
   2. subdomains `app.` + `api.`
   3. completely different sites (`*.vercel.app` + `*.onrender.com`)
-- **Chosen:** 1. Production uses one new GoDaddy A record for an unused subdomain (e.g. `rottom.your-domain.com`). Caddy forwards `/api`, `/auth`, `/admin` to the private `api:4000` and serves the built frontend for everything else. Locally, the Vite dev proxy does the same.
+- **Chosen:** 1. Production uses one new GoDaddy A record for an unused subdomain (e.g. `rottom.outbox.shikharsaxena.space`). Caddy forwards `/api`, `/auth`, `/admin` to the private `api:4000` and serves the built frontend for everything else. Locally, the Vite dev proxy does the same.
 - **History:** first chose 2 (same site, so cookies work). Switched because the user didn't want a public `api.` hostname, and with Caddy on one EC2, one origin is *simpler*: no CORS, no `credentials: 'include'`, first-party cookies.
 - **Option 3 rejected:** the session would be a third-party cookie, which Safari blocks and Firefox isolates, so login breaks there.
 - **Kept:** the `Origin` check on writes, as cheap CSRF protection.
@@ -212,10 +212,10 @@ Every decision made during the design discussion. Each one records the options w
 - **Ethereal's storage** is a preview inbox (a few hours), not a job store. Schedules live in Postgres + Redis.
 - **Details:** [04](./04-rate-limiting.md#why-not-just-rely-on-ethereals-limit)
 
-### D24 · Deployment: single EC2 + Docker Compose + Caddy 🟡
+### D24 · Deployment: single EC2 + Docker Compose + Caddy ✅
 - **Options:** **one EC2 running the same compose stack + Caddy** · managed (S3/CloudFront, ECS, RDS, ElastiCache, OpenSearch, ALB).
 - **Recommended:** one EC2 (t3.medium+, `ap-south-1`) with an Elastic IP and one new GoDaddy A record. Caddy provides automatic Let's Encrypt. Only 80/443 are public (22 from your IP).
-- **When:** **after** the local demo is recorded (P2).
+- **Done:** deployed on 2026-11-03 at <https://rottom.outbox.shikharsaxena.space> ([11](./11-deployment-aws.md)).
 - **Why not managed now:**
   - AWS's search is **OpenSearch**, which the `@elastic/elasticsearch` client rejects
   - ElastiCache defaults to an **evicting** memory policy (needs `noeviction`), and its persistence differs from AOF
@@ -264,7 +264,7 @@ Every decision made during the design discussion. Each one records the options w
 Both modes take the same inputs, so the comparison stays clean. The alternative is to feed the form's limit straight into the per-sender limiter (`min(form, env)`).
 
 ### O2 · Sender rotation ❓
-Should one campaign spread its leads round-robin across several of the user's senders? Throughput would multiply by the number of senders (about 5 lines on top of per-sender limits). **Recommendation:** one "From" per campaign for v1. Rotation is P2.
+Should one campaign spread its leads round-robin across several of the user's senders? Throughput would multiply by the number of senders (about 5 lines on top of per-sender limits). **Recommendation:** one "From" per campaign for v1. Rotation can come later.
 
 ### O3 · Limit per sender ❓
 Should each sender store its own `hourlyLimit` (real mailboxes differ: a new mailbox might do 50/hr, a warmed-up one 300/hr)? **Recommendation:** one env cap (≤ 200, Ethereal's limit) for v1.

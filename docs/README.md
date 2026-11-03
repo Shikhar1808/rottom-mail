@@ -11,7 +11,6 @@
 | [07 · Audit & observability](./07-audit-observability.md) | Append-only audit trail, event catalogue, trigger, Bull Board, hash chain (skipped) |
 | [08 · Senders & Ethereal](./08-senders-ethereal.md) | Per-user Ethereal mailboxes (option B), SMTP pooling, Ethereal limits and what they change |
 | [09 · Scaling & impacts](./09-scaling-impacts.md) | Multiple consumers and senders, throughput math, data store limits, load testing, impact of each decision |
-| [10 · Timeline](./10-timeline.md) | Hour blocks with tick boxes, priorities, cut line, demo script, submission checklist |
 | [11 · Deployment (AWS)](./11-deployment-aws.md) | Single EC2 + Docker Compose + Caddy, one new GoDaddy record, what's public vs private, why not managed services yet |
 | [12 · Backend fixes](./12-backend-fixes.md) | Every bug found in reviews and testing, what it could have done, the fix, and the test that guards it |
 | [References](./references.md) | Every source used, the data taken from it, and what is still unverified |

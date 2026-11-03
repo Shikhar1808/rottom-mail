@@ -2,12 +2,14 @@
 
 A production-style email scheduler with a dashboard. Users log in with Google, upload a list of leads, and schedule emails. The emails are stored in Postgres, fired at the right time by **BullMQ delayed jobs** in Redis (no cron), and sent through **Ethereal** (fake SMTP). The system survives restarts without losing or repeating emails, enforces per-sender rate limits safely across many workers, alerts **Slack** when a limit is reached, and makes every email searchable in **Elasticsearch**.
 
-> **Status:** design complete (see [`docs/`](./docs/README.md)). Implementation in progress, tracked in [`docs/10-timeline.md`](./docs/10-timeline.md). Run commands below are the planned ones and will be checked against the code before submission.
+> **Status:** built and tested. Every design decision, with its options and reasons, is in [`docs/`](./docs/README.md).
+>
+> **Live:** <https://rottom.outbox.shikharsaxena.space> (AWS EC2, Mumbai)
 
 ## How it works
 
 ```
-Browser ──HTTPS──► rottom.your-domain.com (Caddy in prod / Vite proxy locally)
+Browser ──HTTPS──► rottom.outbox.shikharsaxena.space (Caddy in prod / Vite proxy locally)
                         │  /api /auth /admin
                         ▼
                   API (private, :4000) ──► Postgres (source of truth)
@@ -92,7 +94,7 @@ To switch modes, stop the worker (Ctrl+C) and start the other worker command. Th
 | Variable | Example | Purpose |
 |---|---|---|
 | `DATABASE_URL` / `REDIS_URL` / `ELASTICSEARCH_URL` | | Infra |
-| `APP_URL` | `https://localhost:5173` (prod: `https://rottom.your-domain.com`) | The one public origin: redirects, Google callback, `Origin` check, cookie flags |
+| `APP_URL` | `https://localhost:5173` (prod: `https://rottom.outbox.shikharsaxena.space`) | The one public origin: redirects, Google callback, `Origin` check, cookie flags |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | | Google login |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | | Slack connect |
 | `SLACK_REDIRECT_URI` | `https://localhost:5173/api/slack/callback` | Must match a URL registered in the Slack app |
@@ -142,11 +144,10 @@ Step by step: [docs/06](./docs/06-auth-slack.md).
 
 All decisions with alternatives: [docs/02](./docs/02-design-decisions.md). Sources and research data: [docs/references.md](./docs/references.md).
 
-## Deployment (optional, after the demo)
+## Deployment
 
-Planned: a single AWS EC2 (`ap-south-1`) running [`docker-compose.prod.yml`](./docker-compose.prod.yml): the databases, the API, scalable workers and Caddy, all in Docker, standalone from the local `docker-compose.yml` (which is only the databases) (automatic HTTPS) on one new subdomain. Only ports 80/443 are public. Steps, Caddyfile, security group and the reasons for not using managed services yet: [docs/11](./docs/11-deployment-aws.md).
+Live at **<https://rottom.outbox.shikharsaxena.space>**: a single AWS EC2 (`ap-south-1`) running [`docker-compose.prod.yml`](./docker-compose.prod.yml): the databases, the API, scalable workers and Caddy, all in Docker, standalone from the local `docker-compose.yml` (which is only the databases) (automatic HTTPS) on one new subdomain. Only ports 80/443 are public. Steps, Caddyfile, security group and the reasons for not using managed services yet: [docs/11](./docs/11-deployment-aws.md).
 
-_Live URL: to be added if deployed._
 
 ## Demo video
 

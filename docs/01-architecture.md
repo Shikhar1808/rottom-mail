@@ -10,7 +10,7 @@ The system schedules and sends emails at scale. Users schedule emails through an
 
 | Component | Tech | Role |
 |---|---|---|
-| Frontend | Vite + React + TypeScript + Tailwind + React Router + TanStack Query + `sonner` toasts | Login, dashboard (Scheduled / Sent tabs), compose, search, Slack connect. Served at `rottom.your-domain.com` |
+| Frontend | Vite + React + TypeScript + Tailwind + React Router + TanStack Query + `sonner` toasts | Login, dashboard (Scheduled / Sent tabs), compose, search, Slack connect. Served at `rottom.outbox.shikharsaxena.space` |
 | Front door | Caddy (prod, automatic HTTPS) / Vite dev proxy (local, mkcert) | One origin. `/api`, `/auth`, `/admin` go to the API, everything else to the frontend |
 | API | Express 5 + TypeScript + `zod` | Auth, campaigns, emails, search, senders, Slack, Bull Board. **Private**, plain HTTP `:4000`, only reached through the front door |
 | Workers | BullMQ workers (separate process from the API) | `emails` (send), `search-sync` (copy to ES), `notifications` (Slack) |
@@ -31,7 +31,7 @@ flowchart LR
   subgraph FE["Browser"]
     UI["Login · Dashboard · Compose · Search · Slack button"]
   end
-  CAD["Caddy :443 prod / Vite proxy local: rottom.your-domain.com"]
+  CAD["Caddy :443 prod / Vite proxy local: rottom.outbox.shikharsaxena.space"]
   subgraph API["API process: private, plain HTTP :4000"]
     R["Routes: auth, senders, campaigns, emails, search, slack"]
     BB["Bull Board /admin/queues (read-only)"]

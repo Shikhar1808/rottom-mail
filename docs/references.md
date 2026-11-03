@@ -84,5 +84,5 @@ Sources fetched during the design discussion (2026-11-02), what each one support
 - [ ] How long Ethereal accounts last
 - [ ] `auth.revoke` disables the incoming webhook
 - [ ] BullMQ custom jobId character rules (we avoid `:` and use `-`)
-- [ ] Google consent screen: what "Authorized domains" requires for `rottom.your-domain.com` in Testing mode
+- [ ] Google consent screen: what "Authorized domains" requires for `rottom.outbox.shikharsaxena.space` in Testing mode
 - [ ] Vite's dev proxy passes `Set-Cookie` and 302 `Location` headers through unchanged for `/auth/*` (expected, but test it)

@@ -4,7 +4,7 @@
 
 | Setup | Example | Login cookie | Needs | Status |
 |---|---|---|---|---|
-| **1. One origin** | `rottom.your-domain.com` serves the frontend, and `/api`, `/auth`, `/admin` are forwarded to the private backend | ✅ first-party | Caddy (prod) / Vite proxy (local) | ✅ **chosen** |
+| **1. One origin** | `rottom.outbox.shikharsaxena.space` serves the frontend, and `/api`, `/auth`, `/admin` are forwarded to the private backend | ✅ first-party | Caddy (prod) / Vite proxy (local) | ✅ **chosen** |
 | 2. Subdomains | `app.your-domain.com` + `api.your-domain.com` | ✅ same site | CORS with credentials + exact origin, `credentials: 'include'` | superseded |
 | 3. Different sites | `myapp.vercel.app` + `myapi.onrender.com` | ⚠️ third-party cookie: **Safari blocks, Firefox isolates** | token in a header instead (more code, XSS risk) | rejected |
 
@@ -79,7 +79,7 @@ export const cookieOpts = { httpOnly: true, secure: https, sameSite: 'lax', path
 
 **Google Cloud Console (once):**
 - OAuth client of type "Web application".
-- Redirect URIs: `https://localhost:5173/auth/google/callback` (local, through the Vite proxy) and `https://rottom.your-domain.com/auth/google/callback`.
+- Redirect URIs: `https://localhost:5173/auth/google/callback` (local, through the Vite proxy) and `https://rottom.outbox.shikharsaxena.space/auth/google/callback`.
 - Consent screen: External, **Testing** mode, with you and the reviewers as **test users** (only test users can sign in while in testing mode). Add your domain to the authorized domains (exact requirements still to confirm).
 
 ```mermaid
@@ -162,7 +162,7 @@ export const requireAuth = async (req, res, next) => {
 
 **Slack app (once, at api.slack.com/apps):**
 - Create "ReachInbox Alerts" and turn on **Incoming Webhooks**.
-- Redirect URLs (must be HTTPS): `https://localhost:5173/api/slack/callback` (local) and `https://rottom.your-domain.com/api/slack/callback`.
+- Redirect URLs (must be HTTPS): `https://localhost:5173/api/slack/callback` (local) and `https://rottom.outbox.shikharsaxena.space/api/slack/callback`.
 - Scope: `incoming-webhook`.
 - **Manage Distribution:** turn on only if people outside your workspace will connect.
 - `SLACK_REDIRECT_URI` (env) holds the URL for the current environment. It's used in **both** the authorize link and `oauth.v2.access`, which must match.
@@ -287,7 +287,7 @@ limit reached (atomic counter: count == limit)  →  notifications job (jobId sl
       { "type": "mrkdwn", "text": "*Still queued*\n37 emails" },
       { "type": "mrkdwn", "text": "*Resumes*\n<!date^1730556000^{time}|15:00 UTC>" } ] },
     { "type": "context", "elements": [ { "type": "mrkdwn",
-      "text": "Campaign: Q4 pricing outreach · per-sender mode · <https://rottom.your-domain.com/dashboard|Open dashboard>" } ] }
+      "text": "Campaign: Q4 pricing outreach · per-sender mode · <https://rottom.outbox.shikharsaxena.space/dashboard|Open dashboard>" } ] }
   ]
 }
 ```

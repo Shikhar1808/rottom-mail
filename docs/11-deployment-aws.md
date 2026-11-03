@@ -1,12 +1,12 @@
 # 11 · Deployment (AWS + your own domain)
 
-**Status:** 🟡 recommended. **When:** P2, **after** the local demo is recorded, so deployment trouble can't put the submission at risk. The assignment only requires a local run plus a demo video.
+**Status:** ✅ deployed on 2026-11-03 at **<https://rottom.outbox.shikharsaxena.space>**. The steps below are how it was done; `rottom.outbox.shikharsaxena.space` is the real subdomain (a new GoDaddy A record).
 
 ## Shape: one EC2, Docker Compose, Caddy
 
 ```
                      GoDaddy DNS (unchanged, plus ONE new A record)
-                rottom.your-domain.com ──► Elastic IP
+                rottom.outbox.shikharsaxena.space ──► Elastic IP
                                               │
             ┌──────────────── EC2 (Ubuntu, ap-south-1) ───────────────────────┐
             │ Caddy :443   automatic Let's Encrypt HTTPS                        │
@@ -49,18 +49,18 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    With a domain, Caddy gets and renews the certificate by itself. That's inside Caddy, not cron in our code.
 7. **Production env:**
    - `NODE_ENV=production` (also turns dev login off, along with the non-localhost `APP_URL`)
-   - `APP_URL=https://rottom.your-domain.com`
-   - `SLACK_REDIRECT_URI=https://rottom.your-domain.com/api/slack/callback`
+   - `APP_URL=https://rottom.outbox.shikharsaxena.space`
+   - `SLACK_REDIRECT_URI=https://rottom.outbox.shikharsaxena.space/api/slack/callback`
    - These go in `backend/.env` on the server. [`docker-compose.prod.yml`](../docker-compose.prod.yml) sets `NODE_ENV`, `APP_URL`, `SLACK_REDIRECT_URI` and the database addresses itself.
-   - Next to `docker-compose.prod.yml`, a `.env` (git-ignored) with `SITE_ADDRESS=rottom.your-domain.com` and `POSTGRES_PASSWORD=` a long random string of letters and digits (`openssl rand -hex 24`). Compose refuses to start without them.
+   - Next to `docker-compose.prod.yml`, a `.env` (git-ignored) with `SITE_ADDRESS=rottom.outbox.shikharsaxena.space` and `POSTGRES_PASSWORD=` a long random string of letters and digits (`openssl rand -hex 24`). Compose refuses to start without them.
    - real `ENCRYPTION_KEY`, Google and Slack secrets
    - `RATE_LIMIT_WINDOW_MS=3600000`
    - `ADMIN_EMAILS=<your Google email>` (who can open Bull Board)
    - `MAX_PENDING_EMAILS_PER_USER=20000` (the default)
 8. **OAuth redirect URIs (add alongside the local ones):**
-   - Google: `https://rottom.your-domain.com/auth/google/callback`. Add the domain to the consent screen's authorized domains.
-   - Slack: `https://rottom.your-domain.com/api/slack/callback`. Real HTTPS, so there's no localhost question in production.
-   - **To let anyone sign in:** Google Auth Platform → Audience → **Publish app** (from Testing to In production). Google wants a homepage and the privacy policy (`https://rottom.your-domain.com/privacy`) on the authorized domain. The app asks only for `openid email profile`, so no security review is expected. If Google asks to verify the domain, that's one new TXT record on GoDaddy.
+   - Google: `https://rottom.outbox.shikharsaxena.space/auth/google/callback`. Add the domain to the consent screen's authorized domains.
+   - Slack: `https://rottom.outbox.shikharsaxena.space/api/slack/callback`. Real HTTPS, so there's no localhost question in production.
+   - **To let anyone sign in:** Google Auth Platform → Audience → **Publish app** (from Testing to In production). Google wants a homepage and the privacy policy (`https://rottom.outbox.shikharsaxena.space/privacy`) on the authorized domain. The app asks only for `openid email profile`, so no security review is expected. If Google asks to verify the domain, that's one new TXT record on GoDaddy.
    - **To let anyone connect their own Slack:** Slack app → **Manage Distribution** → **Activate Public Distribution**. No Marketplace listing is needed.
 9. **Deploy:**
    ```bash
@@ -70,7 +70,8 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    - **Standalone:** `docker-compose.prod.yml` is the whole stack (databases, `migrate`, API, workers, Caddy) and doesn't use the local `docker-compose.yml`. Its project name is `rottom-prod`, so on a machine that also runs the local databases it gets its own containers, network and volumes.
    - The frontend is built inside its image, and the `migrate` service applies migrations before the API and workers start.
    - Only Caddy publishes ports (80/443); the databases have none. Two workers show multiple consumers working safely in production.
-   - **Checked so far:** the images build, and the API image starts against the databases and answers `/api/health`. The file itself is checked with `docker compose config` only: the full stack hasn't run on a server with a domain yet.
+   - **Checked on the live server (2026-11-03):** the stack starts (`migrate` exits 0, the API passes its health check), Caddy got a Let's Encrypt certificate, `http://` redirects to `https://`, `/api/health` answers in production mode (`devLogin: false`, hourly window), `/privacy` loads, and `/admin/queues` refuses a visitor who isn't logged in (401).
+   - **First-deploy lessons:** create the `.env` next to `docker-compose.prod.yml` before the first `up` (Compose stops without `SITE_ADDRESS` and `POSTGRES_PASSWORD`). Caddy can only get its certificate once DNS and the security group let Let's Encrypt reach ports 80/443; if it failed earlier, `docker compose -f docker-compose.prod.yml restart web` makes it try again at once.
 10. **Smoke test:** login → schedule → send → Slack connect + alert → search → Bull Board at `/admin/queues` (403 for a non-admin account) → `/privacy` loads.
 11. **Cost:** roughly **$35–70/month** (instance + disk + AWS's public-IPv4 charge). **Stop the instance after the review.** Backups: take a manual EBS snapshot before demos (no scheduled backup jobs).
 

@@ -81,7 +81,7 @@ createBullBoard({
 app.use('/admin/queues', requireAuth, requireAdmin, serverAdapter.getRouter()); // admins only: it shows every user's jobs
 ```
 
-Only users whose Google email is in `ADMIN_EMAILS` can open it; everyone else gets 403, because it shows every user's jobs. It's served on the same domain (`https://rottom.your-domain.com/admin/queues`, through Caddy). In production it can additionally be limited to your IP in the Caddyfile ([11](./11-deployment-aws.md)).
+Only users whose Google email is in `ADMIN_EMAILS` can open it; everyone else gets 403, because it shows every user's jobs. It's served on the same domain (`https://rottom.outbox.shikharsaxena.space/admin/queues`, through Caddy). In production it can additionally be limited to your IP in the Caddyfile ([11](./11-deployment-aws.md)).
 
 | State | Meaning here |
 |---|---|
