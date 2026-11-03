@@ -3,6 +3,7 @@ import { EmailStatus, type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/db';
 import { HttpError } from '../utils/errors';
+import { errorFields, log } from '../lib/log';
 import { retryEmail } from '../services/emails';
 import { searchEmailIds } from '../services/search';
 
@@ -68,7 +69,7 @@ const SearchQuery = z.object({ q: z.string().trim().min(1).max(200), status: z.e
 emailsRouter.get('/search', async (req, res) => {
   const { q, status } = SearchQuery.parse(req.query);
   const ids = await searchEmailIds(req.userId!, q, status).catch((err) => {
-    console.error('search failed:', err.message);
+    log.error('search failed', { userId: req.userId, ...errorFields(err) });
     throw new HttpError(503, 'Search is unavailable right now. The tabs still work.');
   });
   // userId and status are checked again here: ES is only a copy and may be a second behind.

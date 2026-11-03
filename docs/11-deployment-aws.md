@@ -37,24 +37,22 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
    | 4000, 5432, 6379, 9200 | **nobody** | Express, Postgres, Redis, ES stay on the private Docker network. An exposed Redis or ES without a password gets hijacked within hours |
 
 5. **Server setting for Elasticsearch:** `sudo sysctl -w vm.max_map_count=262144` (and persist it in `/etc/sysctl.d/`).
-6. **Caddyfile:**
+6. **Caddyfile:** [`frontend/Caddyfile`](../frontend/Caddyfile), baked into the web image. Its site address comes from `SITE_ADDRESS`, the domain.
    ```
-   rottom.your-domain.com {
+   {$SITE_ADDRESS::80} {
      handle /api/*   { reverse_proxy api:4000 }
      handle /auth/*  { reverse_proxy api:4000 }
      handle /admin/* { reverse_proxy api:4000 }     # Bull Board (admins only); optionally limit to your IP
-     handle {
-       root * /srv/frontend
-       try_files {path} /index.html
-       file_server
-     }
+     handle { root * /srv; try_files {path} /index.html; file_server }
    }
    ```
-   Caddy gets and renews the certificate by itself. That's inside Caddy, not cron in our code.
+   With a domain, Caddy gets and renews the certificate by itself. That's inside Caddy, not cron in our code.
 7. **Production env:**
    - `NODE_ENV=production` (also turns dev login off, along with the non-localhost `APP_URL`)
    - `APP_URL=https://rottom.your-domain.com`
    - `SLACK_REDIRECT_URI=https://rottom.your-domain.com/api/slack/callback`
+   - These go in `backend/.env` on the server. [`docker-compose.prod.yml`](../docker-compose.prod.yml) sets `NODE_ENV`, `APP_URL`, `SLACK_REDIRECT_URI` and the database addresses itself.
+   - Next to `docker-compose.prod.yml`, a `.env` (git-ignored) with `SITE_ADDRESS=rottom.your-domain.com` and `POSTGRES_PASSWORD=` a long random string of letters and digits (`openssl rand -hex 24`). Compose refuses to start without them.
    - real `ENCRYPTION_KEY`, Google and Slack secrets
    - `RATE_LIMIT_WINDOW_MS=3600000`
    - `ADMIN_EMAILS=<your Google email>` (who can open Bull Board)
@@ -67,11 +65,12 @@ The same `docker compose` stack as local, plus Caddy. Nothing in the design chan
 9. **Deploy:**
    ```bash
    git pull
-   (cd frontend && npm ci && npm run build)          # → /srv/frontend (mounted into Caddy)
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --scale worker=2
-   docker compose exec api npx prisma migrate deploy
+   docker compose -f docker-compose.prod.yml up -d --build --scale worker=2
    ```
-   Two workers show multiple consumers working safely in production.
+   - **Standalone:** `docker-compose.prod.yml` is the whole stack (databases, `migrate`, API, workers, Caddy) and doesn't use the local `docker-compose.yml`. Its project name is `rottom-prod`, so on a machine that also runs the local databases it gets its own containers, network and volumes.
+   - The frontend is built inside its image, and the `migrate` service applies migrations before the API and workers start.
+   - Only Caddy publishes ports (80/443); the databases have none. Two workers show multiple consumers working safely in production.
+   - **Checked so far:** the images build, and the API image starts against the databases and answers `/api/health`. The file itself is checked with `docker compose config` only: the full stack hasn't run on a server with a domain yet.
 10. **Smoke test:** login → schedule → send → Slack connect + alert → search → Bull Board at `/admin/queues` (403 for a non-admin account) → `/privacy` loads.
 11. **Cost:** roughly **$35–70/month** (instance + disk + AWS's public-IPv4 charge). **Stop the instance after the review.** Backups: take a manual EBS snapshot before demos (no scheduled backup jobs).
 

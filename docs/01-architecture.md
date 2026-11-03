@@ -258,9 +258,11 @@ Every state-changing request (POST/PUT/DELETE) must carry `Origin: APP_URL` and 
 ## Planned folder layout
 
 ```
-docker-compose.yml          postgres, redis (AOF + noeviction), elasticsearch
-docker-compose.prod.yml     + caddy, api, worker (scalable)   (see 11)
-Caddyfile                   HTTPS + static frontend + /api /auth /admin → api:4000
+docker-compose.yml          local: postgres, redis (AOF + noeviction), elasticsearch for `npm run dev`
+docker-compose.prod.yml     production, standalone: databases + migrate + api + worker (scalable) + web (Caddy, HTTPS on 80/443)   (see 11)
+frontend/Caddyfile          static frontend + /api /auth /admin → api:4000 (one origin); HTTPS when SITE_ADDRESS is a domain
+backend/Dockerfile          one image for the API and the worker; its build stage runs the migrations
+frontend/Dockerfile         vite build → served by Caddy
 backend/
   prisma/schema.prisma
   eslint.config.mjs         no-cron guard (see 03)

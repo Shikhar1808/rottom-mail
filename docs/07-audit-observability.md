@@ -96,9 +96,26 @@ Only users whose Google email is in `ADMIN_EMAILS` can open it; everyone else ge
 | React dashboard | users | emails (Scheduled / Sent) | Postgres |
 | Audit timeline | users / support | history of one email | Postgres `AuditEvent` |
 | Bull Board | admins (`ADMIN_EMAILS`) | queue jobs and their state, all users | Redis |
+| Logs | developers | what each process did and why something failed | stdout of the API and worker |
 
 **In the demo:**
 - **Restart:** the Delayed count is unchanged.
 - **Rate limit:** jobs go back to Delayed with next-window times (per-sender), or Waiting piles up (global).
 - **Load:** Delayed drains at the configured rate.
 - **Search:** `search-sync` jobs appear on each change.
+
+## Logs
+
+`backend/src/lib/log.ts`, no logging library. One line per event with a time, a level, a message and context fields (`emailId`, `userId`, `status`, `ms`...). Readable lines in development, one JSON object per line when `NODE_ENV=production`, so log tools can filter by field. `docker compose logs -f api worker` shows them in Docker.
+
+```
+18:23:05.312 ERROR google login failed step="exchanging the code with Google" error="ETIMEDOUT request to https://oauth2.googleapis.com/token failed, reason: "
+14:08:57.204 INFO  email sent emailId=… campaignId=… sender=…@ethereal.email attempt=1 ms=812 reply="250 Accepted [STATUS=new MSGID=…]"
+14:09:01.010 INFO  rate limit: email moved to the next window emailId=… senderId=… limit=5 newTime=2026-11-03T08:40:00.000Z
+```
+
+- **API:** one line per write, error or slow request (method, path, status, ms, userId). Fast, successful reads are skipped, because the dashboard polls every 5 seconds. Login (and which step failed), Slack connect, search errors, startup repair, unexpected errors with their stack.
+- **Worker:** every email sent (with the SMTP reply and how long it took), deferred, rejected, parked as "needs check" or recovered after a crash; rate-limit moves and pauses; Slack alerts; failed mailbox checks; jobs that fail and whether they'll retry.
+- **Errors** show the code (`ETIMEDOUT`, `EAI_AGAIN`, `ECONNREFUSED`...), the HTTP or SMTP status, the server's reply and the chain of causes. A connection that failed on every address lists each attempt. This fixed a Google login log that ended in an empty "reason:" and said nothing.
+- **Never logged:** query strings (they can hold OAuth codes), the request settings HTTP libraries keep on errors (the Google one holds the client secret; `tests/unit/log.test.ts` checks it), passwords, tokens, webhook URLs and lead addresses (ids only).
+- **The audit trail stays the record** of what happened to each email; logs are for operating and debugging the processes.

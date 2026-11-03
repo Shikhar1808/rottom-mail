@@ -1,0 +1,104 @@
+# Production: the whole app on one server (docs/11). Standalone: it does not use docker-compose.yml, which is only
+# the local databases for `npm run dev`.
+#
+#   backend/.env                  secrets and settings (copy backend/.env.example)
+#   .env next to this file        SITE_ADDRESS=rottom.your-domain.com and POSTGRES_PASSWORD=<letters and digits>
+#   docker compose -f docker-compose.prod.yml up -d --build --scale worker=2
+#
+# Only Caddy is reachable from outside (80/443, with an automatic Let's Encrypt certificate). The databases have no
+# host ports: only the API and the workers reach them, inside this project's own network.
+name: rottom-prod
+
+# What the API, the workers and the migration share.
+x-backend: &backend
+  build: ./backend
+  image: rottom-backend
+  env_file: backend/.env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://rottom:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/rottom
+    REDIS_URL: redis://redis:6379
+    ELASTICSEARCH_URL: http://elasticsearch:9200
+    APP_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS to the domain}
+    SLACK_REDIRECT_URI: https://${SITE_ADDRESS}/api/slack/callback
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: rottom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: rottom
+    volumes: ["pg-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rottom"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    # AOF so delayed jobs survive restarts; noeviction because BullMQ must never lose keys.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"   # not reachable from outside this network
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes: ["es-data:/usr/share/elasticsearch/data"]
+    restart: unless-stopped
+
+  # Applies new migrations, then exits. The API and the workers start after it succeeds.
+  migrate:
+    <<: *backend
+    build: { context: ./backend, target: build }
+    image: rottom-backend-build
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *backend
+    command: ["node", "dist/server.js"]
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      elasticsearch: { condition: service_started }   # not waited for: sending works without it, search retries
+
+  # `--scale worker=2`: the atomic claim keeps each email to one send.
+  worker:
+    <<: *backend
+    command: ["node", "dist/workers/index.js"]
+    restart: unless-stopped
+    stop_grace_period: 30s   # graceful shutdown lets the emails being sent finish
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      elasticsearch: { condition: service_started }
+
+  # The built frontend and the one-origin proxy (frontend/Caddyfile): /api, /auth and /admin go to the API.
+  web:
+    build: ./frontend
+    image: rottom-web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS to the domain}
+    ports: ["80:80", "443:443"]
+    volumes: ["caddy-data:/data", "caddy-config:/config"]   # certificates survive restarts
+    restart: unless-stopped
+    depends_on: [api]
+
+volumes:
+  pg-data:
+  redis-data:
+  es-data:
+  caddy-data:
+  caddy-config:

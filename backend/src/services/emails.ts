@@ -2,6 +2,7 @@ import type { Email, EmailStatus, Prisma, Sender } from '@prisma/client';
 import { prisma } from '../lib/db';
 import { emailQueue, searchSyncQueue } from '../lib/queues';
 import { HttpError } from '../utils/errors';
+import { errorFields, log } from '../lib/log';
 import { findInMailbox, messageIdFor } from './mailer';
 
 export type AuditInput = {
@@ -66,6 +67,7 @@ export async function checkDelivery(email: Email & { sender: Sender }): Promise<
     if (await findInMailbox(email.sender, messageIdFor(email.id))) return { result: 'found', reason: 'Found in the sending mailbox' };
   } catch (err) {
     const why = (err as { responseText?: string }).responseText || (err as Error).message;
+    log.warn('mailbox check failed', { emailId: email.id, sender: email.sender.email, ...errorFields(err) });
     return { result: 'unknown', reason: `Couldn't check the sending mailbox (${why})` };
   }
   if (Date.now() - (email.claimedAt?.getTime() ?? 0) < TRUST_NOT_FOUND_MS) return { result: 'not_found', reason: 'Not in the sending mailbox' };

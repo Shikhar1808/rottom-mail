@@ -2,6 +2,7 @@ import { DelayedError, type Job, RateLimitError } from 'bullmq';
 import { env } from '../config/env';
 import { emailQueue, type EmailJob, notificationsQueue } from '../lib/queues';
 import { redis } from '../lib/redis';
+import { log } from '../lib/log';
 import { audit, type Ev, updateEmail } from './emails';
 type GateEmail = { id: string; userId: string; senderId: string; campaignId: string };
 
@@ -72,6 +73,7 @@ async function perSenderGate(job: Job<EmailJob>, token: string | undefined, emai
     if (r.hitLimit) await notifyLimitReached(email, 'per_sender', r.slot, limit);
     if (r.deferTo) {
       const data = { mode: 'per_sender', limit, window: WIN, newTime: new Date(r.deferTo).toISOString() };
+      log.info('rate limit: email moved to the next window', { emailId: email.id, senderId: email.senderId, limit, newTime: data.newTime });
       await updateEmail(email.id, { scheduledAt: new Date(r.deferTo) }, ev('deferred_rate_limit', data), ['scheduled']);
       throw await sleepUntil(job, token, r.deferTo);
     }
@@ -96,6 +98,7 @@ async function globalGate(email: GateEmail, ev: Ev) {
   if (count > limit) {
     // Pause the whole queue until the next window. The job goes back to the front of the line.
     await emailQueue.rateLimit(nextWindow(now) - now);
+    if (count === limit + 1) log.warn('rate limit: queue paused until the next window', { limit, until: new Date(nextWindow(now)).toISOString() });
     if (count === limit + 1) await audit({ ...ev('queue_paused', { until: new Date(nextWindow(now)).toISOString(), limit }), emailId: email.id });
     throw new RateLimitError();
   }

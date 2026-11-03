@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { errorFields, log } from '../lib/log';
 import { Router } from 'express';
 import { env } from '../config/env';
 import { decrypt, encrypt } from '../utils/crypto';
@@ -57,7 +58,7 @@ slackRouter.get('/callback', async (req, res) => {
       signal: AbortSignal.timeout(10_000),
     }).then((x) => x.json())) as OAuthAccess;
     if (!r.ok || !r.incoming_webhook || !r.team || !r.access_token) {
-      console.error('slack connect failed:', r.error ?? 'no incoming_webhook in the reply');
+      log.warn('slack connect refused', { userId, reply: r.error ?? 'no incoming_webhook in the reply' });
       return back('error');
     }
     const data = {
@@ -77,7 +78,7 @@ slackRouter.get('/callback', async (req, res) => {
     await notificationsQueue.add('connected', { kind: 'connected', userId });
     back('connected');
   } catch (err) {
-    console.error('slack connect failed:', (err as Error).message);
+    log.error('slack connect failed', { userId, ...errorFields(err) });
     back('error');
   }
 });

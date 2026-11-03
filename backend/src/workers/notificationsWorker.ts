@@ -1,6 +1,7 @@
 import { type Job, UnrecoverableError } from 'bullmq';
 import { decrypt } from '../utils/crypto';
 import { prisma } from '../lib/db';
+import { log } from '../lib/log';
 import type { NotificationJob } from '../lib/queues';
 import { audit } from '../services/emails';
 import { connectedMessage, limitMessage, PERMANENT_SLACK_ERRORS } from '../services/slack';
@@ -13,7 +14,10 @@ export async function processNotification(job: Job<NotificationJob>) {
 
   // Read on every alert (no cache), so disconnect and reconnect take effect immediately.
   const slack = await prisma.slackIntegration.findUnique({ where: { userId: n.userId } });
-  if (slack?.status !== 'active') return void (await event('slack_skipped', { reason: slack ? 'broken' : 'not connected' }));
+  if (slack?.status !== 'active') {
+    log.info('slack alert skipped', { userId: n.userId, kind: n.kind, reason: slack ? 'broken' : 'not connected' });
+    return void (await event('slack_skipped', { reason: slack ? 'broken' : 'not connected' }));
+  }
 
   const message = n.kind === 'connected' ? connectedMessage(slack.channel) : limitMessage(await limitInfo(n));
   const res = await fetch(decrypt(slack.webhookUrlEnc), {
@@ -23,10 +27,14 @@ export async function processNotification(job: Job<NotificationJob>) {
     signal: AbortSignal.timeout(10_000),
   });
   const reply = (await res.text()).trim().slice(0, 200);
-  if (res.ok) return void (await event('slack_notified', { status: res.status, channel: slack.channel }));
+  if (res.ok) {
+    log.info('slack alert sent', { userId: n.userId, kind: n.kind, channel: slack.channel });
+    return void (await event('slack_notified', { status: res.status, channel: slack.channel }));
+  }
 
   if (PERMANENT_SLACK_ERRORS.has(reply)) {
     // The webhook is gone (app removed, channel archived...): stop trying, the UI shows "Reconnect Slack".
+    log.warn('slack webhook is gone, marked broken', { userId: n.userId, status: res.status, reply });
     await prisma.slackIntegration.update({ where: { userId: n.userId }, data: { status: 'broken', lastError: reply } });
     await event('slack_broken', { status: res.status, error: reply });
     throw new UnrecoverableError(`slack: ${reply}`);

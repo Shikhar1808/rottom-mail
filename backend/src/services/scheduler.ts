@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { log } from '../lib/log';
 import { prisma } from '../lib/db';
 import { chunk } from '../utils/helpers';
 import { emailQueue, searchSyncQueue } from '../lib/queues';
@@ -29,7 +30,7 @@ export async function enqueueEmails(rows: Due[]) {
 export async function repairQueues() {
   const token = crypto.randomUUID();
   if (!(await redis.set('repair_lock', token, 'EX', 300, 'NX'))) {
-    console.log('startup repair: already running on another instance');
+    log.info('startup repair: already running on another instance');
     return;
   }
   try {
@@ -72,7 +73,7 @@ export async function repairQueues() {
       cursor = batch[batch.length - 1].id;
     }
     await audit({ userId: 'system', type: 'startup_repair', actor: 'system:startup-repair', data: { requeuedChecked: total, reindexQueued: stale } });
-    console.log(`startup repair: ${total} scheduled emails checked against the queue, ${stale} queued for re-indexing`);
+    log.info('startup repair done', { scheduledChecked: total, reindexQueued: stale });
   } finally {
     if ((await redis.get('repair_lock')) === token) await redis.del('repair_lock');
   }

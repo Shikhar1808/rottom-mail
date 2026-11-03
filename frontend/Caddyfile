@@ -1,0 +1,21 @@
+# One origin: the frontend and the API on the same address, so there's no CORS and the API is never public on its own.
+# SITE_ADDRESS is the domain (docker-compose.prod.yml): Caddy gets and renews its Let's Encrypt certificate by itself.
+# Without it, Caddy serves plain http on port 80.
+{$SITE_ADDRESS::80} {
+	encode gzip
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle /auth/* {
+		reverse_proxy api:4000
+	}
+	# Bull Board: the API lets in only ADMIN_EMAILS.
+	handle /admin/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

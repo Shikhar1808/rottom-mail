@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { errorFields, log } from '../lib/log';
 import { Router } from 'express';
 import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
 import { devLogin, env } from '../config/env';
@@ -40,18 +41,25 @@ authRouter.get('/google/callback', async (req, res) => {
   if (req.query.error) return fail('cancelled');
   if (!saved?.state || typeof req.query.state !== 'string' || req.query.state !== saved.state) return fail('state');
 
+  let step = 'exchanging the code with Google';
   try {
     const { tokens } = await google.getToken({ code: String(req.query.code), codeVerifier: saved.codeVerifier });
+    step = 'verifying the ID token';
     const ticket = await google.verifyIdToken({ idToken: tokens.id_token!, audience: env.GOOGLE_CLIENT_ID });
     const p = ticket.getPayload();
-    if (!p?.email || !p.email_verified) return fail('unverified');
+    if (!p?.email || !p.email_verified) {
+      log.warn('google login refused: email not verified');
+      return fail('unverified');
+    }
+    step = 'saving the user and session';
     const profile = { email: p.email, name: p.name ?? p.email, avatarUrl: p.picture ?? null };
     const user = await prisma.user.upsert({ where: { googleId: p.sub }, create: { googleId: p.sub, ...profile }, update: profile });
     await createSession(res, user.id);
     await audit({ userId: user.id, type: 'login', actor: `user:${user.id}` });
+    log.info('google login', { userId: user.id });
     res.redirect(`${env.APP_URL}/dashboard`);
   } catch (err) {
-    console.error('google login failed:', (err as Error).message);
+    log.error('google login failed', { step, ...errorFields(err) });
     fail('google');
   }
 });

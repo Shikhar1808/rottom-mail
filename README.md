@@ -144,7 +144,7 @@ All decisions with alternatives: [docs/02](./docs/02-design-decisions.md). Sourc
 
 ## Deployment (optional, after the demo)
 
-Planned: a single AWS EC2 (`ap-south-1`) running the same Docker Compose stack plus Caddy (automatic HTTPS) on one new subdomain. Only ports 80/443 are public. Steps, Caddyfile, security group and the reasons for not using managed services yet: [docs/11](./docs/11-deployment-aws.md).
+Planned: a single AWS EC2 (`ap-south-1`) running [`docker-compose.prod.yml`](./docker-compose.prod.yml): the databases, the API, scalable workers and Caddy, all in Docker, standalone from the local `docker-compose.yml` (which is only the databases) (automatic HTTPS) on one new subdomain. Only ports 80/443 are public. Steps, Caddyfile, security group and the reasons for not using managed services yet: [docs/11](./docs/11-deployment-aws.md).
 
 _Live URL: to be added if deployed._
 

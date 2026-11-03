@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { z } from 'zod';
 import { devLogin, env } from './config/env';
 import { prisma } from './lib/db';
+import { errorFields, log } from './lib/log';
 import { HttpError } from './utils/errors';
 import { originCheck } from './middleware/originCheck';
 import { allQueues } from './lib/queues';
@@ -29,6 +30,19 @@ export function createApp() {
   const app = express();
   app.use(express.json({ limit: '4mb' })); // ~10k leads, or 2 MB of attachments sent as base64
   app.use(cookieParser());
+  // One line per write, error or slow request. Fast, successful reads (the dashboard polls every 5s) and "not signed in"
+  // checks are skipped. The path only: query strings can hold OAuth codes.
+  app.use((req, res, next) => {
+    const start = performance.now();
+    res.on('finish', () => {
+      const ms = Math.round(performance.now() - start);
+      const quiet = req.method === 'GET' && ms < 1000 && (res.statusCode < 400 || res.statusCode === 401);
+      if (quiet) return;
+      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+      log[level](`${req.method} ${req.path}`, { status: res.statusCode, ms, userId: req.userId });
+    });
+    next();
+  });
   app.use(originCheck);
 
   app.get('/api/health', (_req, res) => {
@@ -48,11 +62,11 @@ export function createApp() {
   app.use('/api/slack', requireAuth, slackRouter);
   app.use('/admin/queues', requireAuth, requireAdmin, bullBoard()); // shows every user's jobs, so admins only
 
-  app.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: Error & { status?: number }, req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, ...(err.code && { code: err.code }) });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: 'Invalid input', issues: err.issues });
     if (err.status && err.status < 500) return void res.status(err.status).json({ error: err.message }); // e.g. bad JSON
-    console.error(err);
+    log.error('request failed', { method: req.method, path: req.path, userId: req.userId, ...errorFields(err), stack: err.stack });
     res.status(500).json({ error: 'Internal error' });
   });
   return app;
