@@ -1,9 +1,9 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router';
 import { useMe } from './api/hooks';
-import { Header } from './components/Header';
 import { Spinner } from './components/ui';
 import { Compose } from './pages/Compose';
 import { Dashboard } from './pages/Dashboard';
+import { EmailView } from './pages/EmailView';
 import { Login } from './pages/Login';
 import { Privacy } from './pages/Privacy';
 
@@ -15,6 +15,7 @@ export function App() {
       <Route element={<SignedIn />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/compose" element={<Compose />} />
+        <Route path="/emails/:id" element={<EmailView />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
@@ -32,12 +33,5 @@ function SignedIn() {
     );
   }
   if (!me.data) return <Navigate to="/login" replace />;
-  return (
-    <>
-      <Header me={me.data} />
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-        <Outlet />
-      </main>
-    </>
-  );
+  return <Outlet />; // each page brings its own layout, as in the Figma
 }

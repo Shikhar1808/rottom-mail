@@ -1,17 +1,19 @@
 // All times are shown in the viewer's own time zone.
 const clockFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-const rel = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const stampFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+const longFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 
+/** "14:07:41": the history timeline and toasts. */
 export const clock = (iso: string) => clockFmt.format(new Date(iso));
+/** "Tue, 3 Nov". */
 export const day = (iso: string) => dayFmt.format(new Date(iso));
-
-/** "in 3 minutes", "2 hours ago", "now". */
-export function relative(iso: string, now = Date.now()) {
-  const s = Math.round((new Date(iso).getTime() - now) / 1000);
-  if (Math.abs(s) < 10) return rel.format(0, 'second'); // "now"
-  for (const [unit, size] of [['day', 86_400], ['hour', 3600], ['minute', 60]] as const) {
-    if (Math.abs(s) >= size) return rel.format(Math.round(s / size), unit);
-  }
-  return rel.format(s, 'second');
-}
+/** "Tue 2:07:41 PM": the pill on scheduled emails. Seconds matter when emails are 2s apart. */
+export const stamp = (at: string | Date) => stampFmt.format(new Date(at));
+/** "Nov 3, 10:23 AM": the date on the email page. */
+export const longDate = (iso: string) => longFmt.format(new Date(iso));
+/** "340 KB", "1.2 MB". */
+export const fileSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+/** "2:07 PM": the time at the end of a sent row. */
+export const shortTime = (at: string | Date) => timeFmt.format(new Date(at));

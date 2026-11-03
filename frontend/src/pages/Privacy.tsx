@@ -49,7 +49,7 @@ export function Privacy() {
         </Section>
         <Section title="Deleting your data">
           Contact us at{' '}
-          <a href={CONTACT.href} className="text-airmail underline">
+          <a href={CONTACT.href} className="text-brand underline">
             {CONTACT.label}
           </a>{' '}
           and we’ll delete your account, campaigns, emails and Slack connection. The send history (when each email was scheduled and sent) is

@@ -1,19 +1,24 @@
 @import 'tailwindcss';
 
+/* The Figma's layout and green, with two touches of our own: the pixel ROTTOM wordmark and the airmail edge. */
 @theme {
-  --font-sans: 'Barlow', ui-sans-serif, system-ui, sans-serif;
-  --color-paper: #f6f8fb;
-  --color-ink: #1b2433;
-  --color-muted: #5b6577;
-  --color-line: #dce2ea;
-  --color-airmail: #1d4e89;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-pixel: 'Silkscreen', ui-monospace, monospace;
+  --color-ink: #1d2125;
+  --color-muted: #646b73;
+  --color-line: #eceef0;
+  --color-field: #f4f5f6;
+  --color-brand: #00843b; /* the Figma green, a shade darker so white and green text pass contrast */
+  --color-brand-soft: #e7f5ec;
+  --color-later: #c2410c;
+  --color-later-soft: #fff1e6;
   --color-stamp: #b3261e;
-  --color-sent: #1f7a4d;
   --color-warn: #9a6700;
+  --color-airmail: #1d4e89;
 }
 
 body {
-  @apply bg-paper font-sans text-ink antialiased;
+  @apply bg-white font-sans text-ink antialiased;
 }
 
 /* The airmail envelope edge: the one decorative element, on top of every page. */
@@ -28,5 +33,5 @@ body {
 }
 
 :focus-visible {
-  @apply outline-2 outline-offset-2 outline-airmail;
+  @apply outline-2 outline-offset-2 outline-brand;
 }

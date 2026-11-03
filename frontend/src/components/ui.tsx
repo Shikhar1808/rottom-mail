@@ -1,16 +1,18 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { EmailStatus } from '../api/types';
+import { stamp } from '../lib/format';
+import { ClockIcon } from './icons';
 
-type Variant = 'primary' | 'secondary' | 'ghost';
+type Variant = 'primary' | 'outline' | 'ghost';
 const variants: Record<Variant, string> = {
-  primary: 'bg-airmail text-white hover:bg-[#173f6f] disabled:bg-airmail/50',
-  secondary: 'border border-line bg-white text-ink hover:border-muted disabled:text-muted',
-  ghost: 'text-muted hover:text-ink disabled:opacity-50',
+  primary: 'bg-brand text-white hover:bg-[#006e31] disabled:bg-brand/50',
+  outline: 'border border-brand text-brand hover:bg-brand-soft disabled:border-brand/40 disabled:text-brand/50 disabled:hover:bg-transparent',
+  ghost: 'text-muted hover:bg-field hover:text-ink disabled:opacity-50',
 };
 
-/** Shared by <Button> and links that look like buttons (Compose, Connect Slack). */
-export const buttonClass = (variant: Variant = 'secondary') =>
-  `inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[15px] font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]}`;
+/** Shared by <Button> and links that look like buttons (Compose, Login with Google). */
+export const buttonClass = (variant: Variant = 'outline') =>
+  `inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]}`;
 
 export function Button({ variant, busy, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; busy?: boolean }) {
   return (
@@ -21,32 +23,42 @@ export function Button({ variant, busy, children, ...props }: ButtonHTMLAttribut
   );
 }
 
-export const inputClass =
-  'w-full rounded-md border border-line bg-white px-3 py-2 text-[15px] placeholder:text-muted/70 focus:border-airmail focus:outline-none focus-visible:outline-2';
-
-export function Field({ label, hint, htmlFor, children }: { label: string; hint?: ReactNode; htmlFor: string; children: ReactNode }) {
+/** A round icon-only button: refresh, filter, send later. */
+export function IconButton({ label, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="block text-sm font-semibold">
-        {label}
-      </label>
+    <button type="button" aria-label={label} title={label} {...props} className={`grid size-8 shrink-0 place-items-center rounded-full text-muted hover:bg-field hover:text-ink ${props.className ?? ''}`}>
       {children}
-      {hint && <p className="text-sm text-muted">{hint}</p>}
-    </div>
+    </button>
   );
 }
 
-const badge: Record<EmailStatus, [string, string]> = {
-  scheduled: ['Scheduled', 'bg-airmail/10 text-airmail'],
-  sending: ['Sending', 'bg-airmail text-white'],
-  sent: ['Sent', 'bg-sent/10 text-sent'],
-  failed: ['Failed', 'bg-stamp/10 text-stamp'],
-  needs_check: ['Needs check', 'bg-warn/10 text-warn'],
+const pill: Record<EmailStatus, [label: string, cls: string]> = {
+  scheduled: ['Scheduled', 'border-later/25 bg-later-soft text-later'],
+  sending: ['Sending now', 'border-later/25 bg-later-soft text-later'],
+  sent: ['Sent', 'border-line bg-field text-muted'],
+  failed: ['Failed', 'border-stamp/20 bg-stamp/10 text-stamp'],
+  needs_check: ['Needs check', 'border-warn/25 bg-warn/10 text-warn'],
 };
 
-export function StatusBadge({ status }: { status: EmailStatus }) {
-  const [label, cls] = badge[status];
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-sm font-medium whitespace-nowrap ${cls}`}>{label}</span>;
+/** Scheduled emails show their send time, like the Figma's orange clock pill. Everything else shows its status. */
+export function StatusPill({ status, scheduledAt }: { status: EmailStatus; scheduledAt: string }) {
+  const [label, cls] = pill[status];
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap tabular-nums ${cls}`}>
+      {(status === 'scheduled' || status === 'sending') && <ClockIcon className="size-3.5" />}
+      {status === 'scheduled' ? stamp(scheduledAt) : label}
+    </span>
+  );
+}
+
+export function Avatar({ name, src, className = 'size-8' }: { name: string; src?: string | null; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  const initials = name.split(/[\s@.]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  if (src && !broken) {
+    // no-referrer: Google's avatar host refuses some requests that carry a Referer.
+    return <img src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} className={`${className} shrink-0 rounded-full`} />;
+  }
+  return <span aria-hidden className={`${className} grid shrink-0 place-items-center rounded-full bg-brand text-xs font-semibold text-white`}>{initials}</span>;
 }
 
 export function Spinner({ label }: { label?: string }) {
@@ -61,8 +73,27 @@ export function Spinner({ label }: { label?: string }) {
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="px-6 py-16 text-center">
-      <p className="text-lg font-semibold">{title}</p>
-      {children && <div className="mx-auto mt-1 max-w-md text-muted">{children}</div>}
+      <p className="text-base font-semibold">{title}</p>
+      {children && <div className="mx-auto mt-1 max-w-md text-sm text-muted">{children}</div>}
     </div>
   );
 }
+
+/** For small popovers: closes on a click outside or Escape. Put the returned ref on the wrapper around the trigger and the popover. */
+export function useDismiss(open: boolean, close: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && close();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, close]);
+  return ref;
+}
+
+export const menuItemClass = 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-field';

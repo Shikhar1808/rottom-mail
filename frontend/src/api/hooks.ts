@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from './client';
-import type { AuditEvent, CampaignInput, CampaignResult, EmailItem, EmailPage, Me, Sender, Slack } from './types';
+import type { AuditEvent, CampaignInput, CampaignResult, Counts, EmailDetail, EmailItem, EmailPage, Me, Sender, SentFilter, Slack } from './types';
 
 const POLL_MS = 5000; // the tabs follow sends live
 
@@ -14,10 +14,10 @@ export const useMe = () =>
 
 export const useHealth = () => useQuery({ queryKey: ['health'], queryFn: () => api<{ ok: boolean; devLogin: boolean; limitWindow: string }>('/api/health') });
 
-export const useEmails = (tab: 'scheduled' | 'sent') =>
+export const useEmails = (tab: 'scheduled' | 'sent', status: SentFilter | null = null) =>
   useInfiniteQuery({
-    queryKey: ['emails', tab],
-    queryFn: ({ pageParam }) => api<EmailPage>(`/api/emails?tab=${tab}${pageParam ? `&cursor=${pageParam}` : ''}`),
+    queryKey: ['emails', tab, status],
+    queryFn: ({ pageParam }) => api<EmailPage>(`/api/emails?tab=${tab}${status ? `&status=${status}` : ''}${pageParam ? `&cursor=${pageParam}` : ''}`),
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     refetchInterval: POLL_MS,
@@ -31,12 +31,13 @@ export const useSearch = (q: string) =>
     refetchInterval: POLL_MS,
   });
 
-export const useHistory = (emailId: string | null) =>
-  useQuery({
-    queryKey: ['history', emailId],
-    queryFn: () => api<{ items: AuditEvent[] }>(`/api/emails/${emailId}/events`),
-    enabled: emailId !== null,
-  });
+export const useCounts = () => useQuery({ queryKey: ['emails', 'counts'], queryFn: () => api<Counts>('/api/emails/counts'), refetchInterval: POLL_MS });
+
+export const useEmail = (id: string) =>
+  useQuery({ queryKey: ['emails', 'one', id], queryFn: () => api<EmailDetail>(`/api/emails/${id}`), refetchInterval: POLL_MS });
+
+export const useHistory = (emailId: string) =>
+  useQuery({ queryKey: ['emails', 'history', emailId], queryFn: () => api<{ items: AuditEvent[] }>(`/api/emails/${emailId}/events`), refetchInterval: POLL_MS });
 
 // The first call creates the user's Ethereal mailboxes, which can take a few seconds.
 export const useSenders = () => useQuery({ queryKey: ['senders'], queryFn: () => api<{ items: Sender[] }>('/api/senders'), staleTime: 60_000 });
